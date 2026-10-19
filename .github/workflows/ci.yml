@@ -116,7 +116,10 @@ jobs:
         run: |
           # El micro puede salir con un codigo distinto de 0: es el resultado
           # que queremos observar, no un error del pipeline de CI.
-          ./scripts/benchmark-10m.ps1 -Profile stress150
+          # Ejecutar en un proceso hijo evita que exit 1 del test esperado
+          # termine el wrapper de GitHub Actions antes de revisar los informes.
+          $PSNativeCommandUseErrorActionPreference = $false
+          & pwsh -NoProfile -File ./scripts/benchmark-10m.ps1 -Profile stress150
           $exitCode = $LASTEXITCODE
           Write-Host "Stress150 process exit code: $exitCode"
           $dirs = @(Get-ChildItem -Path reports -Directory -Filter 'prueba-stress150-*')
