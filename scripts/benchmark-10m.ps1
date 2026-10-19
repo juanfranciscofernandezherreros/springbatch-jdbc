@@ -2,7 +2,7 @@
 # Modos: benchmark secuencial base/A/B/C o prueba independiente de una particion.
 # Ejecutar desde Windows con Docker Desktop: test-batch.bat (opcion 5 o 6)
 param(
-  [ValidateSet('benchmark','quick','medium','full','custom','single','simple')]
+  [ValidateSet('benchmark','quick','medium','full','custom','single','simple','stress150')]
   [string]$Profile = 'benchmark',
   [ValidateRange(0,10000000)][long]$Records = 0,
   [ValidateRange(0,100000)][int]$Chunk = 0,
@@ -42,6 +42,7 @@ $scenarios = @(foreach ($id in $ids) {
     'C' {'Ocho workers'}
     'single' {'Una particion'}
     'simple' {'Prueba simple de 1000 registros, 500 MiB RAM'}
+    'stress150' {'Prueba de estres con 150 MiB RAM; posible OOM'}
     'quick' {'Prueba rapida'}
     'medium' {'Prueba intermedia'}
     'full' {'Prueba completa'}
@@ -65,8 +66,11 @@ $scenarios = @(foreach ($id in $ids) {
     throw "Chunk/Page/Grid/Threads/SeedBlock deben ser positivos en $id"
   }
   if ($entry.Pool -lt $entry.Threads + 2) { throw "Pool JDBC de $id ($($entry.Pool)) debe ser al menos Threads+2 ($($entry.Threads + 2))" }
-  if ($entry.HeapMiB -lt 128 -or $entry.MemoryMiB -lt $entry.HeapMiB + 128) {
-    throw "En $id, HeapMiB >= 128 y MemoryMiB >= HeapMiB + 128 (margen para memoria no heap)"
+  # El perfil stress150 es intencionalmente extremo para observar OOM o fallos
+  # de arranque; no es valido como configuracion de produccion.
+  $minHeadroomMiB = if ($id -eq 'stress150') { 16 } else { 128 }
+  if ($entry.HeapMiB -lt 128 -or $entry.MemoryMiB -lt $entry.HeapMiB + $minHeadroomMiB) {
+    throw "En $id, HeapMiB >= 128 y MemoryMiB >= HeapMiB + $minHeadroomMiB"
   }
   $entry
 })
@@ -189,7 +193,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;color:#a33636}footer{color:#596b
 <tr><td>Memoria maxima contenedor Spring Batch</td><td>$($r.MemoryLimitMiB) MiB</td></tr>
 <tr><td>Bloque carga de origen</td><td>$($r.SeedBlock)</td></tr>
 <tr><td>Leídos</td><td>$($r.Read)</td></tr><tr><td>Escritos</td><td>$($r.Written)</td></tr>
-<tr><td>Descartados</td><td>$($r.Skipped)</td></tr><tr><td>Estado</td><td>$status</td></tr>
+<tr><td>Descartados</td><td>$($r.Skipped)</td></tr><tr><td>Codigo de salida del contenedor Batch</td><td>$($r.DockerExitCode)</td></tr><tr><td>Estado</td><td>$status</td></tr>
 </table></section><section><h2>Registros de ejecución</h2><p><a href="logs/job-$($r.Id).log">Log completo de Spring Batch</a> · <a href="progreso.log">Progreso global</a></p></section>
 <section><h2>Diagnóstico</h2><pre>$errorMessage</pre></section>
 <footer>Tiempo y contadores: tablas Spring Batch; heap: suma de picos reportados por pools JVM (no equivale a toda la RAM de Docker).
@@ -237,6 +241,9 @@ function Metrics([string]$jobKey) {
 
 try {
   ProgressLog ("{0}: {1} prueba(s) de {2:N0} registros" -f $modeLabel,$scenarioCount,$Records)
+  if ($mode -eq 'stress150') {
+    ProgressLog "AVISO: prueba de estres intencionada de 150 MiB para Batch; puede terminar por OOM o fallar al arrancar. PostgreSQL no tiene este limite."
+  }
   ProgressLog "Informes HTML/CSV y logs: $reportDir"
   if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { throw "Docker no está instalado" }
   [void](Invoke-DockerCommand -argv @('compose','version'))
@@ -270,10 +277,12 @@ try {
     $env:BATCH_MEMORY_LIMIT=('{0}m' -f $s.MemoryMiB)
     $key="bench-$($s.Id)-"+[guid]::NewGuid().ToString('N').Substring(0,16)
     $log=Join-Path $reportDir ("logs\job-$($s.Id).log")
-    $r=[pscustomobject]@{ Id=$s.Id;Name=$s.Name;Chunk=$s.Chunk;Page=$s.Page;Grid=$s.Grid;Threads=$s.Threads;DbPool=$s.Pool;HeapLimitMiB=$s.HeapMiB;MemoryLimitMiB=$s.MemoryMiB;SeedBlock=$s.SeedBlock;Seconds=$null;Throughput=$null;Read=0L;Written=0L;Skipped=0L;HeapMiB=$null;Status='NOT_STARTED';Error='';RunKey=$key }
+    $r=[pscustomobject]@{ Id=$s.Id;Name=$s.Name;Chunk=$s.Chunk;Page=$s.Page;Grid=$s.Grid;Threads=$s.Threads;DbPool=$s.Pool;HeapLimitMiB=$s.HeapMiB;MemoryLimitMiB=$s.MemoryMiB;SeedBlock=$s.SeedBlock;DockerExitCode=$null;Seconds=$null;Throughput=$null;Read=0L;Written=0L;Skipped=0L;HeapMiB=$null;Status='NOT_STARTED';Error='';RunKey=$key }
     ProgressLog ("PRUEBA {0}/{1}: registros={2}, chunk={3}, page={4}, particiones={5}, hilos={6}, pool={7}, heap={8}MiB, contenedor={9}MiB" -f $s.Id,$scenarioCount,$Records,$s.Chunk,$s.Page,$s.Grid,$s.Threads,$s.Pool,$s.HeapMiB,$s.MemoryMiB)
     try {
       [void](Sql 'TRUNCATE TABLE processed_events,rejected_events;')
+      # Un log existe incluso si el microservicio no llega a arrancar.
+      New-Item -ItemType File -Path $log -Force | Out-Null
       $commandArgs=@('compose','-p',$project,'run','--rm','batch','--app.run=true',"--app.job-key=$key")
       # La salida anterior se guardaba en archivos temporales y solo se
       # mostraba al terminar. Ahora cada linea se imprime y se guarda en vivo.
@@ -311,7 +320,15 @@ try {
         $ErrorActionPreference = $oldPreference
         $jobWatch.Stop()
       }
-      if ($jobExitCode -ne 0) { throw "Spring Batch fallo (codigo=$jobExitCode). Log: $log" }
+      $r.DockerExitCode = $jobExitCode
+      if ($jobExitCode -ne 0) {
+        $diagnosis = if ($jobExitCode -eq 137) {
+          "Posible OOM (exit=137 / SIGKILL). Revisar logs; el codigo por si solo no prueba que fue OOM."
+        } else {
+          "El microservicio ha salido con codigo $jobExitCode. Revisar OutOfMemoryError u otros errores en el log."
+        }
+        throw "Spring Batch fallo: $diagnosis Log: $log"
+      }
       $m=Metrics $key
       $r.Status=$m.Status; $r.Read=$m.Read; $r.Written=$m.Written; $r.Skipped=$m.Skipped
       $r.Seconds=[math]::Round($m.Millis/1000.0,3)
