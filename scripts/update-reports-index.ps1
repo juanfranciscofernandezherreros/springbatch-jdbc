@@ -202,3 +202,4 @@ try {
 if (-not $Quiet) {
   Write-Host ('INDICE GENERAL: {0} ({1} ejecuciones, {2} correctas, {3} con error)' -f $outPath,$allCount,$good,$bad)
 }
+exit 0
