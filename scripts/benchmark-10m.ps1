@@ -1,12 +1,17 @@
 #Requires -Version 5.1
-# Benchmark secuencial: base, A, B y C. Cada test produce HTML.
-# Ejecutar desde Windows con Docker Desktop: test-batch.bat (opcion 5)
-param([ValidateRange(1,10000000)][long]$Records = 10000000)
+# Modos: benchmark secuencial base/A/B/C o prueba independiente de una particion.
+# Ejecutar desde Windows con Docker Desktop: test-batch.bat (opcion 5 o 6)
+param(
+  [ValidateRange(1,10000000)][long]$Records = 10000000,
+  [switch]$SinglePartition
+)
 
 $ErrorActionPreference = 'Stop'
 Set-Location (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-$reportDir = Join-Path (Get-Location).Path ("reports\benchmark-10m-" + $stamp + "-" + (Get-Random -Maximum 9999))
+$reportPrefix = if ($SinglePartition) { 'particion-unica-10m-' } else { 'benchmark-10m-' }
+$modeLabel = if ($SinglePartition) { 'Prueba con una particion' } else { 'Benchmark secuencial' }
+$reportDir = Join-Path (Get-Location).Path ("reports\" + $reportPrefix + $stamp + "-" + (Get-Random -Maximum 9999))
 New-Item -ItemType Directory -Path (Join-Path $reportDir 'logs') -Force | Out-Null
 $project = 'sb10mbench-' + (Get-Random -Maximum 999999)
 $env:DB_HOST_PORT = [string](Get-Random -Minimum 30000 -Maximum 61000)
@@ -22,6 +27,13 @@ $scenarios = @(
   [pscustomobject]@{ Id='B';Name='Seis workers';Chunk=1000;Page=1000;Grid=12;Threads=6 },
   [pscustomobject]@{ Id='C';Name='Ocho workers';Chunk=2000;Page=1000;Grid=16;Threads=8 }
 )
+if ($SinglePartition) {
+  $scenarios = @(
+    [pscustomobject]@{ Id='single';Name='Una particion, un trabajador';Chunk=500;Page=1000;Grid=1;Threads=1 }
+  )
+  $env:DB_POOL_SIZE = '6'
+}
+$scenarioCount = $scenarios.Count
 
 function EscapeHtml([string]$s) { return [System.Net.WebUtility]::HtmlEncode($s) }
 function ProgressLog([string]$message) {
@@ -99,6 +111,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;color:#a33636}footer{color:#596b
 <section><h2>Configuración y validación</h2><table>
 <tr><td>Chunk</td><td>$($r.Chunk)</td></tr><tr><td>Page</td><td>$($r.Page)</td></tr>
 <tr><td>Particiones</td><td>$($r.Grid)</td></tr><tr><td>Hilos</td><td>$($r.Threads)</td></tr>
+<tr><td>Pool JDBC</td><td>$($r.DbPool)</td></tr>
 <tr><td>Leídos</td><td>$($r.Read)</td></tr><tr><td>Escritos</td><td>$($r.Written)</td></tr>
 <tr><td>Descartados</td><td>$($r.Skipped)</td></tr><tr><td>Estado</td><td>$status</td></tr>
 </table></section><section><h2>Registros de ejecución</h2><p><a href="logs/job-$($r.Id).log">Log completo de Spring Batch</a> · <a href="progreso.log">Progreso global</a></p></section>
@@ -115,19 +128,23 @@ function SaveIndex {
     $speed = if ($null -ne $r.Throughput) { '{0:N0}' -f $r.Throughput } else { '-' }
     "<tr><td><a href='prueba-$($r.Id).html'>$($r.Id) - $(EscapeHtml $r.Name)</a></td><td>$($r.Chunk)</td><td>$($r.Threads)</td><td>$t</td><td>$speed</td><td>$($r.Status)</td></tr>"
   }
+  $explanation = if ($SinglePartition) {
+    'Prueba independiente de un solo trabajador y una sola particion. El tiempo corresponde exclusivamente al job.'
+  } else {
+    'Las cuatro pruebas usan el mismo origen; la caché de PostgreSQL puede mejorar las pasadas posteriores.'
+  }
   $html = @"
 <!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Benchmark Spring Batch</title><style>
+<title>$modeLabel Spring Batch</title><style>
 body{font:16px Segoe UI,Arial,sans-serif;max-width:1100px;margin:42px auto;padding:0 16px;color:#1d2d42;background:#f5f7fb}
 table{border-collapse:collapse;width:100%;background:white}th{background:#243c62;color:white;text-align:left}
 td,th{padding:13px;border-bottom:1px solid #e4e9ee}a{color:#225ca2}
 p{color:#566678}aside{background:white;border-radius:12px;padding:16px;margin-top:20px}
-</style></head><body><h1>Benchmark secuencial - $Records registros</h1>
-<p>Completadas $($results.Count) de 4 pruebas. Haz clic en cada una para abrir su informe HTML.</p>
+</style></head><body><h1>$modeLabel - $Records registros</h1>
+<p>Completadas $($results.Count) de $scenarioCount prueba(s). Haz clic para abrir su informe HTML.</p>
 <table><tr><th>Prueba</th><th>Chunk</th><th>Hilos</th><th>Segundos</th><th>Registros/s</th><th>Estado</th></tr>
 $($trs -join [Environment]::NewLine)
-</table><aside>El origen es el mismo en las cuatro pruebas; se vacía el destino antes de cada ejecución.
-La primera pasada puede verse afectada por caché fría. Para un benchmark concluyente, hay que repetir y alternar el orden.</aside>
+</table><aside>$explanation</aside>
 <p>Consulta también <a href="progreso.log">el registro de progreso</a> y los logs de cada job en <code>logs/</code>.</p>
 <p>Resumen disponible en resumen.csv. La carga inicial y la compilación no cuentan dentro de la duración del job.</p></body></html>
 "@
@@ -143,7 +160,7 @@ function Metrics([string]$jobKey) {
 }
 
 try {
-  ProgressLog "Benchmark secuencial: 4 pruebas de $Records registros por configuracion"
+  ProgressLog ("{0}: {1} prueba(s) de {2:N0} registros" -f $modeLabel,$scenarioCount,$Records)
   ProgressLog "Informes HTML/CSV y logs: $reportDir"
   if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { throw "Docker no está instalado" }
   [void](Invoke-DockerCommand -argv @('compose','version'))
@@ -174,8 +191,8 @@ try {
     $env:BATCH_THREADS=[string]$s.Threads
     $key="bench-$($s.Id)-"+[guid]::NewGuid().ToString('N').Substring(0,16)
     $log=Join-Path $reportDir ("logs\job-$($s.Id).log")
-    $r=[pscustomobject]@{ Id=$s.Id;Name=$s.Name;Chunk=$s.Chunk;Page=$s.Page;Grid=$s.Grid;Threads=$s.Threads;Seconds=$null;Throughput=$null;Read=0L;Written=0L;Skipped=0L;HeapMiB=$null;Status='NOT_STARTED';Error='';RunKey=$key }
-    ProgressLog ("PRUEBA {0}/4: chunk={1}, page={2}, particiones={3}, hilos={4}" -f $s.Id,$s.Chunk,$s.Page,$s.Grid,$s.Threads)
+    $r=[pscustomobject]@{ Id=$s.Id;Name=$s.Name;Chunk=$s.Chunk;Page=$s.Page;Grid=$s.Grid;Threads=$s.Threads;DbPool=[int]$env:DB_POOL_SIZE;Seconds=$null;Throughput=$null;Read=0L;Written=0L;Skipped=0L;HeapMiB=$null;Status='NOT_STARTED';Error='';RunKey=$key }
+    ProgressLog ("PRUEBA {0}/{1}: chunk={2}, page={3}, particiones={4}, hilos={5}, pool={6}" -f $s.Id,$scenarioCount,$s.Chunk,$s.Page,$s.Grid,$s.Threads,$env:DB_POOL_SIZE)
     try {
       [void](Sql 'TRUNCATE TABLE processed_events,rejected_events;')
       $commandArgs=@('compose','-p',$project,'run','--rm','batch','--app.run=true',"--app.job-key=$key")
