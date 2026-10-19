@@ -19,7 +19,7 @@ services:
 
   batch:
     profiles: ["job"]
-    mem_limit: 1g
+    mem_limit: ${BATCH_MEMORY_LIMIT:-1024m}
     build: .
     depends_on:
       db:
@@ -35,7 +35,7 @@ services:
       BATCH_THREADS: ${BATCH_THREADS:-4}
       BATCH_MAX_SKIPS: ${BATCH_MAX_SKIPS:-0}
       BATCH_FAIL_AT_ID: ${BATCH_FAIL_AT_ID:-0}
-      JAVA_TOOL_OPTIONS: "-Xms128m -Xmx512m -XX:+ExitOnOutOfMemoryError"
+      JAVA_TOOL_OPTIONS: "-Xms128m -Xmx${BATCH_HEAP_LIMIT:-512m} -XX:+ExitOnOutOfMemoryError"
     restart: "no"
 
 volumes:
