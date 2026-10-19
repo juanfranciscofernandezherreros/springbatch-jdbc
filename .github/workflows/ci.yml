@@ -14,3 +14,23 @@ jobs:
           cache: maven
       - name: Test
         run: mvn -B -ntp test
+      - name: Validate benchmark PowerShell syntax
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile('scripts/benchmark-10m.ps1', [ref]$tokens, [ref]$parseErrors) | Out-Null
+          if ($parseErrors.Count -gt 0) {
+            $parseErrors | Format-List | Out-String | Write-Error
+            exit 1
+          }
+      - name: Benchmark smoke test (4 sequential jobs x 1000 records)
+        shell: pwsh
+        run: ./scripts/benchmark-10m.ps1 -Records 1000
+      - name: Upload HTML smoke reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-smoke
+          path: reports/
+          if-no-files-found: warn
