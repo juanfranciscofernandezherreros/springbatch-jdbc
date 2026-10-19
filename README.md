@@ -14,6 +14,36 @@ test-batch.bat 10000000
 
 El script verifica que existan exactamente diez millones en el origen y el destino, que la ejecución termine `COMPLETED` y que los contadores del job registren exactamente diez millones de lecturas y escrituras, sin saltos. Cada lanzamiento del `.bat` crea un proyecto Docker **aislado** con una base de datos vacía y puerto temporal. Tanto si el job termina correctamente como si falla, ejecuta `docker compose -p <proyecto-temporal> down --volumes --rmi local --remove-orphans`: borra los contenedores, el volumen PostgreSQL y la imagen local de esa prueba. **No elimina los otros proyectos Docker, ni las imágenes base compartidas, ni la caché global de compilación**. Si el `.bat` se cierra a la fuerza, es posible que tengas que ejecutar el comando de limpieza impreso en consola. La prueba de 10 millones todavía no ha sido ejecutada de extremo a extremo en un equipo Windows.
 
+## Prueba con una partición y un trabajador (Windows)
+
+En el **único `test-batch.bat`**, selecciona la **opción 6** para procesar
+**10.000.000 de registros con una sola partición y sin paralelismo de workers**.
+También puedes ejecutarla directamente desde CMD:
+
+```bat
+git pull
+test-batch.bat single
+```
+
+No tienes que definir variables con `set`. El BAT establece para esta opción
+`BATCH_GRID_SIZE=1`, `BATCH_THREADS=1`, `BATCH_CHUNK_SIZE=500`,
+`BATCH_PAGE_SIZE=1000`, `DB_POOL_SIZE=6` y heap Java máximo de 512 MiB.
+
+La prueba utiliza una instancia PostgreSQL aislada, genera 10 millones de
+registros de origen, procesa el job, verifica todos los contadores y genera
+`reports/particion-unica-10m-FECHA-IDENTIFICADOR/` con `index.html`,
+**`prueba-single.html`**, `resumen.csv`, `progreso.log` y
+`logs/job-single.log`. El progreso se muestra en consola. Al finalizar
+se eliminan únicamente los contenedores y el volumen de esta ejecución;
+los informes quedan guardados.
+
+Para comprobar el recorrido con pocos datos durante el desarrollo, desde
+PowerShell ejecuta:
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/benchmark-10m.ps1 -Records 1000 -SinglePartition`.
+
+Esta opción **no modifica la opción 5**, que sigue comparando base, A, B y C
+con 4, 4, 6 y 8 trabajadores respectivamente.
+
 ## Benchmark secuencial con HTML (Windows)
 
 **Único BAT:** ejecuta `test-batch.bat` y elige la opción **5**; también puedes usar `test-batch.bat benchmark` desde CMD. Requiere Docker Desktop y Windows PowerShell 5.1. El archivo interno `scripts/benchmark-10m.ps1` realiza las mediciones y genera los HTML; **no es un segundo BAT**.
