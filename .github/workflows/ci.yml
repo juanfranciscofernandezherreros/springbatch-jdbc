@@ -71,7 +71,7 @@ jobs:
       - name: Validate all test profiles without Docker
         shell: pwsh
         run: |
-          foreach ($profile in @('quick','medium','full','custom','single','simple','stress150','benchmark')) {
+          foreach ($profile in @('quick','medium','full','custom','manual','single','simple','stress150','benchmark')) {
             ./scripts/benchmark-10m.ps1 -Profile $profile -Records 1000 -ValidateOnly
             if ($LASTEXITCODE -ne 0) { throw "Perfil invalido: $profile" }
           }
@@ -170,6 +170,24 @@ jobs:
             throw "No se respetaron las respuestas interactivas (preguntas: $global:questions)"
           }
           Remove-Item Function:\Read-Host
+      - name: Manual profile smoke test (1 worker and custom reports)
+        shell: pwsh
+        run: |
+          ./scripts/benchmark-10m.ps1 -Profile manual -Records 1000 -ReportsDir 'reports/manual tests'
+          if ($LASTEXITCODE -ne 0) { throw "El perfil manual ha fallado" }
+          $folders = @(Get-ChildItem 'reports/manual tests' -Directory -Filter 'prueba-manual-*')
+          if ($folders.Count -ne 1) { throw 'Falta informe del perfil manual' }
+          $root = $folders[0].FullName
+          foreach($file in @('index.html','prueba-manual.html','resumen.csv','progreso.log','logs/job-manual.log')) {
+            if (-not (Test-Path (Join-Path $root $file))) { throw "Falta $file" }
+          }
+          $r = @(Import-Csv (Join-Path $root 'resumen.csv'))[0]
+          if ($r.Status -ne 'COMPLETED' -or $r.Id -ne 'manual' -or
+              $r.Read -ne '1000' -or $r.Written -ne '1000' -or
+              $r.Grid -ne '1' -or $r.Threads -ne '1' -or
+              $r.HeapLimitMiB -ne '256' -or $r.MemoryLimitMiB -ne '500') {
+            throw "Parametros de manual incorrectos: $($r | Out-String)"
+          }
       - name: Upload HTML smoke reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -198,6 +216,10 @@ jobs:
           call test-batch.bat -Profile full -Records 1000 -ValidateOnly
           if errorlevel 1 exit /b 1
           call test-batch.bat -Profile custom -Records 1000 -ValidateOnly
+          if errorlevel 1 exit /b 1
+          call test-batch.bat -Profile manual -Records 1000 -ValidateOnly
+          if errorlevel 1 exit /b 1
+          call test-batch.bat manual -Records 1000 -Grid 1 -Threads 1 -Pool 6 -HeapMiB 128 -MemoryMiB 150 -ValidateOnly
           if errorlevel 1 exit /b 1
           call test-batch.bat -Profile single -Records 1000 -Grid 1 -Threads 1 -ValidateOnly
           if errorlevel 1 exit /b 1
@@ -237,6 +259,25 @@ jobs:
           & ./scripts/benchmark-10m.ps1 -Profile benchmark -Interactive -ValidateOnly
           if ($LASTEXITCODE -ne 0 -or $global:questions -ne 31 -or $global:answerQueue.Count -ne 0) {
             throw "El asistente no pregunto por los cuatro escenarios: $global:questions"
+          }
+      - name: Test MI PRUEBA interactive input and 150MiB custom memory on Windows
+        shell: powershell
+        run: |
+          $global:answerQueue = New-Object System.Collections.Queue
+          @('10000','','250','','1','1','6','128','150','') | ForEach-Object { $global:answerQueue.Enqueue($_) }
+          $global:questions = 0
+          function Read-Host([string]$Prompt) {
+            $global:questions++
+            if ($global:answerQueue.Count -eq 0) { throw "Pregunta inesperada: $Prompt" }
+            return $global:answerQueue.Dequeue()
+          }
+          $lines = @(& ./scripts/benchmark-10m.ps1 -Profile manual -Interactive -ValidateOnly)
+          $lines | ForEach-Object { Write-Host $_ }
+          if ($LASTEXITCODE -ne 0 -or $global:questions -ne 10 -or $global:answerQueue.Count -ne 0) {
+            throw "La entrada manual no funciono: $global:questions preguntas"
+          }
+          if (($lines -join [Environment]::NewLine) -notmatch 'VALIDO: manual Records=10000 Chunk=250 Page=1000 Grid=1 Threads=1 Pool=6 HeapMiB=128 MemoryMiB=150') {
+            throw "No se aplicaron los valores escritos en MI PRUEBA"
           }
       - name: Validate PowerShell 5.1 benchmark syntax
         shell: powershell
