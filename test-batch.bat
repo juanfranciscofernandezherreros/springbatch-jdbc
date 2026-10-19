@@ -4,8 +4,42 @@ REM Ejecuta desde CMD o haciendo doble clic. Requiere Docker Desktop iniciado.
 cd /d "%~dp0"
 if errorlevel 1 goto :fail
 
+if not exist "compose.yaml" goto :missing_compose
 set "REGISTROS=%~1"
-if not defined REGISTROS set "REGISTROS=100000"
+if defined REGISTROS goto :validate_count
+
+:menu
+echo.
+echo ====================================================
+echo       SPRING BATCH - BANCO DE PRUEBAS
+echo ====================================================
+echo   [1] 100.000 registros (rapida)
+echo   [2] 1.000.000 registros (intermedia)
+echo   [3] 10.000.000 registros (prueba completa)
+echo   [4] Otra cantidad (max. 10.000.000)
+echo   [0] Salir
+echo.
+choice /C 12340 /N /M "Selecciona una opcion: "
+if errorlevel 5 exit /b 0
+if errorlevel 4 goto :custom
+if errorlevel 3 (
+  set "REGISTROS=10000000"
+  goto :validate_count
+)
+if errorlevel 2 (
+  set "REGISTROS=1000000"
+  goto :validate_count
+)
+if errorlevel 1 (
+  set "REGISTROS=100000"
+  goto :validate_count
+)
+
+:custom
+set "REGISTROS="
+set /p "REGISTROS=Introduce el numero de registros: "
+
+:validate_count
 
 echo(!REGISTROS!| findstr /R "^[0-9][0-9]*$" >nul
 if errorlevel 1 goto :invalid_count
@@ -35,12 +69,17 @@ if errorlevel 1 goto :compose_missing
 docker info >nul 2>nul
 if errorlevel 1 goto :docker_stopped
 
-echo [1/5] Iniciando PostgreSQL...
+echo [1/6] Iniciando PostgreSQL...
 docker compose up -d --wait db
 if errorlevel 1 goto :fail
 
 echo.
-echo [2/5] Generando registros SQL en bloques de !BLOCK!...
+echo [2/6] Revisando rango de datos existente...
+docker compose exec -T db psql -v ON_ERROR_STOP=1 -U batch -d batchdb -c "DO $ BEGIN IF EXISTS (SELECT 1 FROM source_events WHERE id < 1 OR id > !TOTAL!) THEN RAISE EXCEPTION 'Hay registros fuera del rango elegido; usa una base de prueba limpia'; END IF; END $;"
+if errorlevel 1 goto :fail
+
+echo.
+echo [3/6] Generando registros SQL en bloques de !BLOCK!...
 set /a "START=1"
 :seed_loop
 if !START! GTR !TOTAL! goto :seed_finished
@@ -54,22 +93,24 @@ set /a "START=END+1"
 goto :seed_loop
 
 :seed_finished
+docker compose exec -T db psql -v ON_ERROR_STOP=1 -U batch -d batchdb -c "DO $ DECLARE c BIGINT; BEGIN SELECT count(*) INTO c FROM source_events; IF c <> !TOTAL! THEN RAISE EXCEPTION 'Origen con %% filas; se esperaban !TOTAL!', c; END IF; END $;"
+if errorlevel 1 goto :fail
 echo.
-echo [3/5] Compilando imagen de Spring Batch y ejecutando tests...
+echo [4/6] Compilando imagen de Spring Batch y ejecutando tests...
 docker compose build batch
 if errorlevel 1 goto :fail
 
 echo.
-echo [4/5] Procesando el lote con clave !RUN_KEY!...
+echo [5/6] Procesando el lote con clave !RUN_KEY!...
 docker compose run --rm batch --app.run=true --app.job-key=!RUN_KEY!
 if errorlevel 1 goto :fail
 
 echo.
-echo [5/5] Consultando resultados y comprobando que no falten filas...
+echo [6/6] Verificando exactamente !TOTAL! filas leidas y escritas...
 docker compose exec -T db psql -v ON_ERROR_STOP=1 -U batch -d batchdb -c "SELECT (SELECT count(*) FROM source_events) AS origen, (SELECT count(*) FROM processed_events) AS procesados, (SELECT count(*) FROM rejected_events) AS rechazados;"
 if errorlevel 1 goto :fail
 
-docker compose exec -T db psql -v ON_ERROR_STOP=1 -U batch -d batchdb -c "DO $$ BEGIN IF EXISTS (SELECT 1 FROM source_events s WHERE NOT EXISTS (SELECT 1 FROM processed_events p WHERE p.id=s.id) AND NOT EXISTS (SELECT 1 FROM rejected_events r WHERE r.event_id=s.id)) THEN RAISE EXCEPTION 'Faltan registros sin procesar ni rechazar'; END IF; END $$;"
+docker compose exec -T db psql -v ON_ERROR_STOP=1 -U batch -d batchdb -c "DO $$ DECLARE expected BIGINT := !TOTAL!; source_total BIGINT; target_total BIGINT; job_id BIGINT; job_status VARCHAR(10); read_total BIGINT; write_total BIGINT; skip_total BIGINT; BEGIN SELECT count(*) INTO source_total FROM source_events; SELECT count(*) INTO target_total FROM processed_events; SELECT e.job_execution_id, e.status INTO job_id, job_status FROM batch_job_execution e JOIN batch_job_execution_params p ON p.job_execution_id=e.job_execution_id WHERE p.parameter_name='runKey' AND p.parameter_value='!RUN_KEY!' ORDER BY e.job_execution_id DESC LIMIT 1; IF job_id IS NULL THEN RAISE EXCEPTION 'No se encontro la ejecucion actual'; END IF; SELECT COALESCE(SUM(read_count),0), COALESCE(SUM(write_count),0), COALESCE(SUM(read_skip_count+process_skip_count+write_skip_count),0) INTO read_total, write_total, skip_total FROM batch_step_execution WHERE job_execution_id=job_id AND step_name LIKE 'workerStep:%%'; IF source_total <> expected OR target_total <> expected OR job_status <> 'COMPLETED' OR read_total <> expected OR write_total <> expected OR skip_total <> 0 THEN RAISE EXCEPTION 'Validacion fallida: origen=%% destino=%% estado=%% leidos=%% escritos=%% descartados=%% esperado=%%', source_total, target_total, job_status, read_total, write_total, skip_total, expected; END IF; RAISE NOTICE 'VERIFICACION OK: %% registros leidos y escritos; job COMPLETED', expected; END $$;"
 if errorlevel 1 goto :fail
 
 docker compose exec -T db psql -v ON_ERROR_STOP=1 -U batch -d batchdb -c "SELECT job_execution_id, status, start_time, end_time FROM batch_job_execution ORDER BY job_execution_id DESC LIMIT 3;"
@@ -77,8 +118,7 @@ if errorlevel 1 goto :fail
 
 echo.
 echo =====================================================
-echo   PRUEBA FINALIZADA CORRECTAMENTE
-
+echo   PRUEBA FINALIZADA: !TOTAL! REGISTROS LEIDOS Y ESCRITOS
 echo   Ejecutada con job-key: !RUN_KEY!
 echo =====================================================
 echo.
@@ -90,6 +130,10 @@ echo ERROR: introduce un numero entero entre 1 y 10000000.
 echo Ejemplo: test-batch.bat 100000
 pause
 exit /b 2
+
+:missing_compose
+echo ERROR: pon el archivo .bat junto a compose.yaml.
+goto :fail
 
 :docker_missing
 echo ERROR: docker no esta instalado o no esta en PATH.
@@ -107,6 +151,7 @@ goto :fail
 echo.
 echo ERROR: la prueba se ha detenido. Revisa los mensajes anteriores.
 echo Los datos y checkpoints permanecen en PostgreSQL.
+echo No se borran datos automaticamente; usa un volumen de DEMOSTRACION limpio para probar tamanos menores.
 echo Para reiniciar manualmente un job fallido, conserva su app.job-key.
 pause
 exit /b 1
