@@ -289,10 +289,19 @@ No incluye inserción inicial, compilación ni limpieza. Informe medido en el PC
 # Un error al reconstruirlo no debe convertir en fallido el job de Batch.
 function UpdateMasterIndex {
   try {
-    & (Join-Path $PSScriptRoot 'update-reports-index.ps1') -ReportsDir $reportsRoot -Quiet
+    $generator = Join-Path $PSScriptRoot 'update-reports-index.ps1'
+    & $generator -ReportsDir $reportsRoot -Quiet
+    # Si la raiz elegida esta dentro de reports/, tambien hay que actualizar
+    # el indice principal reports/index.html, no solo el de la subcarpeta.
+    $standardRoot = [System.IO.Path]::GetFullPath((Join-Path (Get-Location).Path 'reports'))
+    $standardPrefix = $standardRoot.TrimEnd('\','/') + [System.IO.Path]::DirectorySeparatorChar
+    $effectiveRoot = [System.IO.Path]::GetFullPath($reportsRoot)
+    if ($effectiveRoot.StartsWith($standardPrefix,[System.StringComparison]::OrdinalIgnoreCase)) {
+      & $generator -ReportsDir $standardRoot -Quiet
+    }
   }
   catch {
-    Write-Warning ("No se pudo actualizar reports/index.html: " + $_.Exception.Message)
+    Write-Warning ("No se pudo actualizar el indice general de informes: " + $_.Exception.Message)
   }
 }
 function SaveIndex {
