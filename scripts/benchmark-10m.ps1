@@ -24,14 +24,14 @@ $scenarios = @(
 )
 
 function EscapeHtml([string]$s) { return [System.Net.WebUtility]::HtmlEncode($s) }
-function Docker([string[]]$argv) {
+function Invoke-DockerCommand([string[]]$argv) {
   $out = @(& docker @argv 2>&1)
   if ($LASTEXITCODE -ne 0) { throw "Docker fallo: docker $($argv -join ' ') | $($out -join ' ')" }
   return $out
 }
 function Sql([string]$query) {
   $argv = @('compose','-p',$project,'exec','-T','db','psql','-X','-v','ON_ERROR_STOP=1','-U','batch','-d','batchdb','-A','-t','-c',$query)
-  return (@(Docker $argv) -join [Environment]::NewLine).Trim()
+  return (@(Invoke-DockerCommand $argv) -join [Environment]::NewLine).Trim()
 }
 function SaveReport($r) {
   $seconds = if ($null -ne $r.Seconds) { '{0:N2} s' -f $r.Seconds } else { 'Sin medicion' }
@@ -107,12 +107,12 @@ try {
   Write-Host "Benchmark secuencial (4 pruebas de $Records registros)"
   Write-Host "HTML y CSV: $reportDir"
   if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { throw "Docker no está instalado" }
-  [void](Docker -argv @('compose','version'))
-  [void](Docker -argv @('info','--format','{{.ServerVersion}}'))
+  [void](Invoke-DockerCommand -argv @('compose','version'))
+  [void](Invoke-DockerCommand -argv @('info','--format','{{.ServerVersion}}'))
   $started = $true
-  [void](Docker -argv @('compose','-p',$project,'up','-d','--wait','db'))
+  [void](Invoke-DockerCommand -argv @('compose','-p',$project,'up','-d','--wait','db'))
   Write-Host 'Compilando Java (y tests) una sola vez...'
-  [void](Docker -argv @('compose','-p',$project,'build','batch'))
+  [void](Invoke-DockerCommand -argv @('compose','-p',$project,'build','batch'))
 
   Write-Host "Generando $Records filas de origen una sola vez..."
   for($from=1L; $from -le $Records; $from+=250000L) {
