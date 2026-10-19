@@ -27,6 +27,25 @@ jobs:
       - name: Benchmark smoke test (4 sequential jobs x 1000 records)
         shell: pwsh
         run: ./scripts/benchmark-10m.ps1 -Records 1000
+      - name: Verify live progress and generated HTML reports
+        shell: pwsh
+        run: |
+          $reports = @(Get-ChildItem -Path reports -Directory -Filter 'benchmark-10m-*')
+          if ($reports.Count -ne 1) { throw "Se esperaba exactamente un directorio de benchmark" }
+          $dir = $reports[0].FullName
+          $expected = @(
+            'index.html','prueba-base.html','prueba-A.html','prueba-B.html','prueba-C.html',
+            'resumen.csv','progreso.log',
+            'logs/job-base.log','logs/job-A.log','logs/job-B.log','logs/job-C.log'
+          )
+          foreach ($file in $expected) {
+            if (-not (Test-Path (Join-Path $dir $file))) {
+              throw "Falta el archivo $file en $dir"
+            }
+          }
+          $logText = Get-Content (Join-Path $dir 'progreso.log') -Raw
+          if ($logText -notmatch 'AVANCE:') { throw "No se generaron avances de lectura/escritura" }
+          if ($logText -notmatch 'BENCHMARK TERMINADO') { throw "Falta el cierre correcto del benchmark" }
       - name: Upload HTML smoke reports
         if: always()
         uses: actions/upload-artifact@v4
