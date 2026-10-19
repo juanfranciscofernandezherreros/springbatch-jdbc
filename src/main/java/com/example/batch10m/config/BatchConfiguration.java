@@ -211,15 +211,35 @@ public class BatchConfiguration {
                 .listener(new JobExecutionListener() {
                     @Override
                     public void afterJob(JobExecution jobExecution) {
+                        // El manager agrega los contadores de los workers:
+                        // incluirlo duplicaba readCount y writeCount.
                         long read = 0, written = 0, skipped = 0;
                         for (StepExecution step : jobExecution.getStepExecutions()) {
-                            read += step.getReadCount();
-                            written += step.getWriteCount();
-                            skipped += step.getSkipCount();
+                            if (step.getStepName().startsWith("workerStep:")) {
+                                read += step.getReadCount();
+                                written += step.getWriteCount();
+                                skipped += step.getSkipCount();
+                            }
                         }
+                        long durationMs = jobExecution.getStartTime() != null
+                                && jobExecution.getEndTime() != null
+                                ? Math.max(1, java.time.Duration.between(
+                                        jobExecution.getStartTime(), jobExecution.getEndTime()).toMillis())
+                                : 0;
+                        long throughput = durationMs > 0 ? Math.round(written * 1000d / durationMs) : 0;
+                        long heapPeakMiB = java.lang.management.ManagementFactory.getMemoryPoolMXBeans()
+                                .stream()
+                                .filter(pool -> pool.getType() == java.lang.management.MemoryType.HEAP)
+                                .mapToLong(pool -> pool.getPeakUsage() == null
+                                        ? 0 : pool.getPeakUsage().getUsed())
+                                .sum() / (1024L * 1024L);
                         log.info("RESULTADO jobKey={} estado={} leídos={} escritos={} descartados={}",
                                 jobExecution.getJobParameters().getString("runKey"),
                                 jobExecution.getStatus(), read, written, skipped);
+                        // Formato fijo parseable por el benchmark de Windows y Linux.
+                        log.info("PERF_RESULT durationMs={} recordsRead={} recordsWritten={} skipped={} recordsPerSecond={} heapPeakMiB={} status={}",
+                                durationMs, read, written, skipped, throughput,
+                                heapPeakMiB, jobExecution.getStatus());
                     }
                 })
                 .start(managerStep)
