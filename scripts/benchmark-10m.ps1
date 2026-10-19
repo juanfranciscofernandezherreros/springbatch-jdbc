@@ -2,7 +2,7 @@
 # Modos: benchmark secuencial base/A/B/C o prueba independiente de una particion.
 # Ejecutar desde Windows con Docker Desktop: test-batch.bat (opcion 5 o 6)
 param(
-  [ValidateSet('benchmark','quick','medium','full','custom','single','simple','stress150')]
+  [ValidateSet('benchmark','quick','medium','full','custom','single','simple','stress150','base','A','B','C')]
   [string]$Profile = 'benchmark',
   [ValidateRange(0,10000000)][long]$Records = 0,
   [ValidateRange(0,100000)][int]$Chunk = 0,
@@ -14,7 +14,9 @@ param(
   [ValidateRange(0,65536)][int]$MemoryMiB = 0,
   [ValidateRange(0,1000000)][int]$SeedBlock = 0,
   [switch]$SinglePartition,
-  [switch]$ValidateOnly
+  [switch]$ValidateOnly,
+  [switch]$ListProfiles,
+  [Alias('OutputDir')][string]$ReportsDir = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -24,6 +26,19 @@ $mode = if ($SinglePartition) { 'single' } else { $Profile }
 $configPath = Join-Path (Get-Location).Path 'test-profiles.csv'
 if (-not (Test-Path -LiteralPath $configPath)) { throw "Falta test-profiles.csv. Ejecuta git pull." }
 $configRows = @(Import-Csv -LiteralPath $configPath -Encoding UTF8)
+# Directorio raiz configurable: no borra informes de otras ejecuciones.
+$reportsRoot = if ([string]::IsNullOrWhiteSpace($ReportsDir)) {
+  Join-Path (Get-Location).Path 'reports'
+} elseif ([System.IO.Path]::IsPathRooted($ReportsDir)) {
+  [System.IO.Path]::GetFullPath($ReportsDir)
+} else {
+  [System.IO.Path]::GetFullPath((Join-Path (Get-Location).Path $ReportsDir))
+}
+if ($ListProfiles) {
+  $configRows | Format-Table -Property Profile,Records,Chunk,Page,Grid,Threads,Pool,HeapMiB,MemoryMiB,SeedBlock -AutoSize | Out-Host
+  Write-Host "Raiz de informes: $reportsRoot"
+  exit 0
+}
 $ids = if ($mode -eq 'benchmark') { @('base','A','B','C') } else { @($mode) }
 if (@($configRows.Profile | Select-Object -Unique).Count -ne $configRows.Count) { throw 'Hay perfiles duplicados en test-profiles.csv' }
 $scenarios = @(foreach ($id in $ids) {
@@ -88,6 +103,7 @@ if ($ValidateOnly) {
       $scenario.Id,$scenario.Records,$scenario.Chunk,$scenario.Page,$scenario.Grid,$scenario.Threads,
       $scenario.Pool,$scenario.HeapMiB,$scenario.MemoryMiB,$scenario.SeedBlock)
   }
+  Write-Host "Raiz de informes: $reportsRoot"
   exit 0
 }
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
@@ -101,7 +117,7 @@ $modeLabel = switch ($mode) {
   'single' { 'Prueba con una particion' }
   default { 'Prueba parametrizada ' + $mode }
 }
-$reportDir = Join-Path (Get-Location).Path ("reports\" + $reportPrefix + $stamp + "-" + (Get-Random -Maximum 9999))
+$reportDir = Join-Path $reportsRoot ($reportPrefix + $stamp + "-" + (Get-Random -Maximum 9999))
 New-Item -ItemType Directory -Path (Join-Path $reportDir 'logs') -Force | Out-Null
 $project = 'sb10mbench-' + (Get-Random -Maximum 999999)
 $env:DB_HOST_PORT = [string](Get-Random -Minimum 30000 -Maximum 61000)
