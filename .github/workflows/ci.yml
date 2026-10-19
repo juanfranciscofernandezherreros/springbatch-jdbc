@@ -68,6 +68,30 @@ jobs:
           }
           $progress = Get-Content (Join-Path $dir 'progreso.log') -Raw
           if ($progress -notmatch 'PRUEBA single AVANCE:') { throw "Falta progreso de particion unica" }
+      - name: Validate all test profiles without Docker
+        shell: pwsh
+        run: |
+          foreach ($profile in @('quick','medium','full','custom','single','benchmark')) {
+            ./scripts/benchmark-10m.ps1 -Profile $profile -Records 1000 -ValidateOnly
+            if ($LASTEXITCODE -ne 0) { throw "Perfil invalido: $profile" }
+          }
+      - name: Parameterized quick test and HTML (custom limits)
+        shell: pwsh
+        run: ./scripts/benchmark-10m.ps1 -Profile quick -Records 1000 -Chunk 1000 -Page 1000 -Grid 1 -Threads 1 -Pool 6 -HeapMiB 256 -MemoryMiB 768 -SeedBlock 500
+      - name: Verify parameter overrides in report and Compose
+        shell: pwsh
+        run: |
+          $reports = @(Get-ChildItem -Path reports -Directory -Filter 'prueba-quick-*')
+          if ($reports.Count -ne 1) { throw "Se esperaba un informe quick" }
+          $dir = $reports[0].FullName
+          $r = @(Import-Csv (Join-Path $dir 'resumen.csv'))[0]
+          if ($r.Chunk -ne '1000' -or $r.Page -ne '1000' -or $r.Grid -ne '1' -or
+              $r.Threads -ne '1' -or $r.DbPool -ne '6' -or $r.HeapLimitMiB -ne '256' -or
+              $r.MemoryLimitMiB -ne '768' -or $r.SeedBlock -ne '500' -or
+              $r.Written -ne '1000' -or $r.Status -ne 'COMPLETED') {
+            throw "Override no aplicado: $($r | Out-String)"
+          }
+          if (-not (Test-Path (Join-Path $dir 'prueba-quick.html'))) { throw "Falta HTML quick" }
       - name: Upload HTML smoke reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -85,6 +109,22 @@ jobs:
           call test-batch.bat --help
           if errorlevel 1 exit /b 1
           if exist benchmark-10m.bat exit /b 1
+      - name: Validate every BAT profile and CLI override without Docker
+        shell: cmd
+        run: |
+          set BATCH_NO_PAUSE=1
+          call test-batch.bat -Profile quick -Records 1000 -ValidateOnly
+          if errorlevel 1 exit /b 1
+          call test-batch.bat -Profile medium -Records 1000 -ValidateOnly
+          if errorlevel 1 exit /b 1
+          call test-batch.bat -Profile full -Records 1000 -ValidateOnly
+          if errorlevel 1 exit /b 1
+          call test-batch.bat -Profile custom -Records 1000 -ValidateOnly
+          if errorlevel 1 exit /b 1
+          call test-batch.bat -Profile single -Records 1000 -Grid 1 -Threads 1 -ValidateOnly
+          if errorlevel 1 exit /b 1
+          call test-batch.bat -Profile benchmark -Records 1000 -ValidateOnly
+          if errorlevel 1 exit /b 1
       - name: Validate PowerShell 5.1 benchmark syntax
         shell: powershell
         run: |
