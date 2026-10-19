@@ -149,6 +149,27 @@ jobs:
           if ($rows.Count -ne 1 -or $rows[0].Id -ne 'A' -or $rows[0].Chunk -ne '250' -or
               $rows[0].Grid -ne '1' -or $rows[0].Threads -ne '1' -or $rows[0].Written -ne '1000' -or
               $rows[0].Status -ne 'COMPLETED') { throw "Parametros A inesperados: $($rows | Out-String)" }
+      - name: Interactive configuration accepts typed values and Enter defaults
+        shell: pwsh
+        run: |
+          # Simulamos respuestas a Read-Host para verificar el asistente sin
+          # bloquear el CI ni poner en marcha Docker.
+          $script:answerQueue = New-Object System.Collections.Queue
+          @('1250','','250','','','','','','','reports/interactive space') |
+            ForEach-Object { $script:answerQueue.Enqueue($_) }
+          $script:questions = 0
+          function Read-Host([string]$Prompt) {
+            $script:questions++
+            if ($script:answerQueue.Count -eq 0) { throw "Pregunta inesperada: $Prompt" }
+            $answer = $script:answerQueue.Dequeue()
+            Write-Host ("Pregunta: {0} / Respuesta: {1}" -f $Prompt,$answer)
+            return $answer
+          }
+          ./scripts/benchmark-10m.ps1 -Profile simple -Interactive -ValidateOnly
+          if ($LASTEXITCODE -ne 0 -or $script:questions -ne 10 -or $script:answerQueue.Count -ne 0) {
+            throw "No se respetaron las respuestas interactivas (preguntas: $script:questions)"
+          }
+          Remove-Item Function:\Read-Host
       - name: Upload HTML smoke reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -202,6 +223,21 @@ jobs:
           if errorlevel 1 exit /b 1
           call test-batch.bat 1000 -Grid 1 -Threads 1 -Pool 6 -ValidateOnly
           if errorlevel 1 exit /b 1
+      - name: Validate interactive defaults for four benchmark scenarios in Windows PowerShell
+        shell: powershell
+        run: |
+          $script:answerQueue = New-Object System.Collections.Queue
+          1..31 | ForEach-Object { $script:answerQueue.Enqueue('') }
+          $script:questions = 0
+          function Read-Host([string]$Prompt) {
+            $script:questions++
+            if ($script:answerQueue.Count -eq 0) { throw "Pregunta no prevista: $Prompt" }
+            return $script:answerQueue.Dequeue()
+          }
+          & ./scripts/benchmark-10m.ps1 -Profile benchmark -Interactive -ValidateOnly
+          if ($LASTEXITCODE -ne 0 -or $script:questions -ne 31 -or $script:answerQueue.Count -ne 0) {
+            throw "El asistente no pregunto por los cuatro escenarios: $script:questions"
+          }
       - name: Validate PowerShell 5.1 benchmark syntax
         shell: powershell
         run: |
