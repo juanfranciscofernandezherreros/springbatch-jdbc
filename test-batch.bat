@@ -17,6 +17,8 @@ if /I "%~1"=="quick" set "RUNARGS=-Profile quick"
 if /I "%~1"=="medium" set "RUNARGS=-Profile medium"
 if /I "%~1"=="full" set "RUNARGS=-Profile full"
 if /I "%~1"=="custom" set "RUNARGS=-Profile custom"
+if /I "%~1"=="manual" set "RUNARGS=-Profile manual"
+if /I "%~1"=="miprueba" set "RUNARGS=-Profile manual"
 if /I "%~1"=="benchmark" set "RUNARGS=-Profile benchmark"
 if /I "%~1"=="base" set "RUNARGS=-Profile base"
 if /I "%~1"=="A" set "RUNARGS=-Profile A"
@@ -54,13 +56,16 @@ echo   [5] Benchmark secuencial (base, A, B, C) + HTML
 echo   [6] Una particion (perfil single) + HTML
 echo   [7] PRUEBA SIMPLE: 1.000 filas, 1 hilo, 500 MB RAM
 echo   [8] ESTRES: 10 millones, 1 hilo, 150 MB RAM (posible OOM)
+echo   [9] MI PRUEBA: introducir todos los valores manualmente
 echo   [0] Salir
 echo.
 echo Pulsa Enter al introducir cada parametro para usar el valor por defecto.
 echo Los valores iniciales de cada prueba se leen de test-profiles.csv
 echo.
-choice /C 123456780 /N /M "Selecciona una opcion: "
-if errorlevel 9 exit /b 0
+choice /C 1234567890 /N /M "Selecciona una opcion: "
+if errorlevel 10 exit /b 0
+if errorlevel 9 set "RUNARGS=-Profile manual"
+if errorlevel 9 goto :interactive_execute
 if errorlevel 8 set "RUNARGS=-Profile stress150"
 if errorlevel 8 goto :interactive_execute
 if errorlevel 7 set "RUNARGS=-Profile simple"
@@ -134,9 +139,11 @@ echo Usa test-batch.bat --help para consultar la sintaxis.
 goto :fatal
 
 :help
-echo USO: test-batch.bat [quick ^| medium ^| full ^| custom ^| benchmark ^| base ^| A ^| B ^| C ^| single ^| simple ^| stress150 ^| cantidad] [opciones]
+echo USO: test-batch.bat [manual ^| quick ^| medium ^| full ^| custom ^| benchmark ^| base ^| A ^| B ^| C ^| single ^| simple ^| stress150 ^| cantidad] [opciones]
 echo O sin argumentos para abrir el menu de pruebas y responder preguntas.
 echo Cada pregunta muestra el valor por defecto. Pulsa Enter para conservarlo.
+echo Opcion 9: MI PRUEBA, para personalizar todos los parametros desde cero.
+echo Acceso directo: test-batch.bat manual
 echo Con perfil sin parametros, p.ej. test-batch.bat single, tambien pregunta.
 echo Para ejecutar sin preguntas usa -Profile single o pasa algun parametro CLI.
 echo Para preguntar con parametros CLI: test-batch.bat -Profile single -Interactive.
