@@ -5,6 +5,9 @@ cd /d "%~dp0"
 if errorlevel 1 goto :fail
 
 if not exist "compose.yaml" goto :missing_compose
+if /I "%~1"=="benchmark" goto :benchmark_menu
+if /I "%~1"=="--help" goto :help
+if /I "%~1"=="/?" goto :help
 set "REGISTROS=%~1"
 if defined REGISTROS goto :validate_count
 
@@ -131,8 +134,38 @@ set "RESULT=0"
 goto :finish
 
 :benchmark_menu
-call "%~dp0benchmark-10m.bat"
-exit /b %errorlevel%
+where powershell.exe >nul 2>nul
+if errorlevel 1 (
+    echo ERROR: PowerShell de Windows no esta instalado o no aparece en PATH.
+    pause
+    exit /b 1
+)
+if not exist "%~dp0scripts\benchmark-10m.ps1" (
+    echo ERROR: falta scripts\benchmark-10m.ps1.
+    echo Ejecuta git pull para descargar todos los archivos nuevos.
+    pause
+    exit /b 1
+)
+echo.
+echo BENCHMARK SECUENCIAL: BASE, A, B y C. 10.000.000 registros por prueba.
+echo Los HTML individuales y la comparativa se guardan en reports\.
+echo.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\benchmark-10m.ps1"
+set "BENCH_EXIT=%ERRORLEVEL%"
+echo.
+if "%BENCH_EXIT%"=="0" (
+  echo Benchmark completado. Comprueba la carpeta reports\.
+) else (
+  echo Benchmark fallido. Revisa el diagnostico en la consola y en reports\.
+)
+pause
+exit /b %BENCH_EXIT%
+
+:help
+echo USO: test-batch.bat [cantidad ^| benchmark ^| --help]
+echo Sin argumentos muestra el menu. Opcion 5: 4 pruebas secuenciales + informes HTML.
+echo Ejecutar directamente: test-batch.bat benchmark
+exit /b 0
 
 :invalid_count
 echo ERROR: introduce un numero entero entre 1 y 10000000.
