@@ -13,6 +13,7 @@ if /I "%~1"=="/?" goto :help
 if /I "%~1"=="-Profile" goto :passthrough
 if /I "%~1"=="-Records" goto :passthrough
 if /I "%~1"=="-SinglePartition" goto :passthrough
+if /I "%~1"=="simple" set "RUNARGS=-Profile simple"
 if /I "%~1"=="benchmark" set "RUNARGS=-Profile benchmark"
 if /I "%~1"=="single" set "RUNARGS=-Profile single"
 if /I "%~1"=="particion" set "RUNARGS=-Profile single"
@@ -38,12 +39,15 @@ echo   [3] Completa (perfil full, 10.000.000 predeterminado)
 echo   [4] Cantidad personalizada (perfil custom)
 echo   [5] Benchmark secuencial (base, A, B, C) + HTML
 echo   [6] Una particion (perfil single) + HTML
+echo   [7] PRUEBA SIMPLE: 1.000 filas, 1 hilo, 500 MB RAM
 echo   [0] Salir
 echo.
 echo Los valores de cada prueba se editan en test-profiles.csv
 echo.
-choice /C 1234560 /N /M "Selecciona una opcion: "
-if errorlevel 7 exit /b 0
+choice /C 12345670 /N /M "Selecciona una opcion: "
+if errorlevel 8 exit /b 0
+if errorlevel 7 set "RUNARGS=-Profile simple"
+if errorlevel 7 goto :execute
 if errorlevel 6 set "RUNARGS=-Profile single"
 if errorlevel 6 goto :execute
 if errorlevel 5 set "RUNARGS=-Profile benchmark"
@@ -101,9 +105,11 @@ echo Usa test-batch.bat --help para consultar la sintaxis.
 goto :fatal
 
 :help
-echo USO: test-batch.bat [quick ^| medium ^| full ^| single ^| benchmark ^| cantidad]
+echo USO: test-batch.bat [simple ^| quick ^| medium ^| full ^| single ^| benchmark ^| cantidad]
 echo O sin argumentos para abrir el menu de pruebas.
 echo Cada prueba se configura en test-profiles.csv.
+echo Opcion 7: 1000 filas, 1 particion, 1 hilo, 500 MiB RAM, heap 256 MiB.
+echo Acceso directo: test-batch.bat simple
 echo Tambien puedes sobrescribir parametros por ejecucion:
 echo test-batch.bat -Profile single -Records 100000 -Chunk 1000 -Page 1000 -Grid 1 -Threads 1 -Pool 6 -HeapMiB 512 -MemoryMiB 1024
 echo Para el benchmark: test-batch.bat -Profile benchmark -Records 100000
