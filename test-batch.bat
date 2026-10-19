@@ -41,7 +41,7 @@ echo   [4] Cantidad personalizada (perfil custom)
 echo   [5] Benchmark secuencial (base, A, B, C) + HTML
 echo   [6] Una particion (perfil single) + HTML
 echo   [7] PRUEBA SIMPLE: 1.000 filas, 1 hilo, 500 MB RAM
-echo   [8] ESTRES: 1.000 filas, 1 hilo, 150 MB RAM (posible OOM)
+echo   [8] ESTRES: 10 millones, 1 hilo, 150 MB RAM (posible OOM)
 echo   [0] Salir
 echo.
 echo Los valores de cada prueba se editan en test-profiles.csv
@@ -114,7 +114,7 @@ echo O sin argumentos para abrir el menu de pruebas.
 echo Cada prueba se configura en test-profiles.csv.
 echo Opcion 7: 1000 filas, 1 particion, 1 hilo, 500 MiB RAM, heap 256 MiB.
 echo Acceso directo: test-batch.bat simple
-echo Opcion 8: 1000 filas, 1 particion, 1 hilo, contenedor Batch 150 MiB y heap Java 128 MiB.
+echo Opcion 8: 10 millones, 1 particion, 1 hilo, contenedor Batch 150 MiB y heap Java 128 MiB.
 echo Acceso directo: test-batch.bat stress150
 echo Tambien puedes sobrescribir parametros por ejecucion:
 echo test-batch.bat -Profile single -Records 100000 -Chunk 1000 -Page 1000 -Grid 1 -Threads 1 -Pool 6 -HeapMiB 512 -MemoryMiB 1024
