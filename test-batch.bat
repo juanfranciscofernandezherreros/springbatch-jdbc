@@ -10,24 +10,34 @@ if not exist "scripts\benchmark-10m.ps1" goto :missing
 set "RUNARGS="
 if /I "%~1"=="--help" goto :help
 if /I "%~1"=="/?" goto :help
-if /I "%~1"=="-Profile" goto :passthrough
-if /I "%~1"=="-Records" goto :passthrough
-if /I "%~1"=="-SinglePartition" goto :passthrough
-if /I "%~1"=="stress150" set "RUNARGS=-Profile stress150"
-if /I "%~1"=="simple" set "RUNARGS=-Profile simple"
-if /I "%~1"=="benchmark" set "RUNARGS=-Profile benchmark"
-if /I "%~1"=="single" set "RUNARGS=-Profile single"
-if /I "%~1"=="particion" set "RUNARGS=-Profile single"
+REM Todos los perfiles del menu y los cuatro escenarios del benchmark aceptan
+REM cualquier numero de parametros adicionales (-Records, -Grid, -ReportsDir...).
 if /I "%~1"=="quick" set "RUNARGS=-Profile quick"
 if /I "%~1"=="medium" set "RUNARGS=-Profile medium"
 if /I "%~1"=="full" set "RUNARGS=-Profile full"
-if defined RUNARGS goto :execute
-if not "%~1"=="" (
-    echo(%~1| findstr /R "^[0-9][0-9]*$" >nul
-    if errorlevel 1 goto :invalid
-    set "RUNARGS=-Profile custom -Records %~1"
-    goto :execute
+if /I "%~1"=="custom" set "RUNARGS=-Profile custom"
+if /I "%~1"=="benchmark" set "RUNARGS=-Profile benchmark"
+if /I "%~1"=="base" set "RUNARGS=-Profile base"
+if /I "%~1"=="A" set "RUNARGS=-Profile A"
+if /I "%~1"=="B" set "RUNARGS=-Profile B"
+if /I "%~1"=="C" set "RUNARGS=-Profile C"
+if /I "%~1"=="single" set "RUNARGS=-Profile single"
+if /I "%~1"=="particion" set "RUNARGS=-Profile single"
+if /I "%~1"=="simple" set "RUNARGS=-Profile simple"
+if /I "%~1"=="stress150" set "RUNARGS=-Profile stress150"
+if defined RUNARGS (
+    shift
+    goto :append_cli
 )
+if not "%~1"=="" goto :cli_or_number
+goto :menu
+
+:cli_or_number
+echo(%~1| findstr /R "^[0-9][0-9]*$" >nul
+if errorlevel 1 goto :passthrough
+set "RUNARGS=-Profile custom -Records %~1"
+shift
+goto :append_cli
 
 :menu
 echo.
@@ -74,7 +84,16 @@ set "RUNARGS=-Profile custom -Records !RECORDS!"
 goto :execute
 
 :passthrough
+REM Modo explicito: test-batch.bat -Profile ... o -ListProfiles
 set "RUNARGS=%*"
+goto :execute
+
+:append_cli
+if "%~1"=="" goto :execute
+REM Usar %1 conserva comillas de rutas como "C:\Mis informes".
+set "RUNARGS=!RUNARGS! %1"
+shift
+goto :append_cli
 
 :execute
 where powershell.exe >nul 2>nul
@@ -85,7 +104,7 @@ if errorlevel 1 (
 echo.
 echo Ejecutando: !RUNARGS!
 echo Configuracion: test-profiles.csv
-echo Informes HTML, CSV y logs: reports\
+echo Informes HTML, CSV y logs: carpeta reports\ o la indicada con -ReportsDir
 echo.
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\benchmark-10m.ps1" !RUNARGS!
 set "EXITCODE=!ERRORLEVEL!"
@@ -109,9 +128,15 @@ echo Usa test-batch.bat --help para consultar la sintaxis.
 goto :fatal
 
 :help
-echo USO: test-batch.bat [stress150 ^| simple ^| quick ^| medium ^| full ^| single ^| benchmark ^| cantidad]
+echo USO: test-batch.bat [quick ^| medium ^| full ^| custom ^| benchmark ^| base ^| A ^| B ^| C ^| single ^| simple ^| stress150 ^| cantidad] [opciones]
 echo O sin argumentos para abrir el menu de pruebas.
-echo Cada prueba se configura en test-profiles.csv.
+echo Cada prueba se configura en test-profiles.csv y se puede sobrescribir desde el CLI.
+echo Listar todas: test-batch.bat -ListProfiles
+echo Opciones: -Records N -Chunk N -Page N -Grid N -Threads N -Pool N
+echo           -HeapMiB N -MemoryMiB N -SeedBlock N -ReportsDir "RUTA"
+echo Ejemplo: test-batch.bat medium -Records 100000 -Grid 1 -Threads 1 -Pool 6
+echo Individual: test-batch.bat A -Records 1000 -ReportsDir "C:\Develop\springbatch-jdbc\reports"
+echo Benchmark: test-batch.bat benchmark -Records 1000 -Chunk 1000
 echo Opcion 7: 1000 filas, 1 particion, 1 hilo, 500 MiB RAM, heap 256 MiB.
 echo Acceso directo: test-batch.bat simple
 echo Opcion 8: 10 millones, 1 particion, 1 hilo, contenedor Batch 150 MiB y heap Java 128 MiB.
