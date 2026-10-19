@@ -134,8 +134,8 @@ try {
     Write-Host "PRUEBA $($s.Id): chunk=$($s.Chunk), page=$($s.Page), grid=$($s.Grid), workers=$($s.Threads)"
     try {
       [void](Sql 'TRUNCATE TABLE processed_events,rejected_events;')
-      $args=@('compose','-p',$project,'run','--rm','batch','--app.run=true',"--app.job-key=$key")
-      & docker @args 2>&1 | Tee-Object -FilePath $log | Out-Host
+      $commandArgs=@('compose','-p',$project,'run','--rm','batch','--app.run=true',"--app.job-key=$key")
+      & docker @commandArgs 2>&1 | Tee-Object -FilePath $log | Out-Host
       if ($LASTEXITCODE -ne 0) { throw "Spring Batch falló. Revisa $log" }
       $m=Metrics $key
       $r.Status=$m.Status; $r.Read=$m.Read; $r.Written=$m.Written; $r.Skipped=$m.Skipped
