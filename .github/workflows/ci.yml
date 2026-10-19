@@ -119,7 +119,7 @@ jobs:
           # Ejecutar en un proceso hijo evita que exit 1 del test esperado
           # termine el wrapper de GitHub Actions antes de revisar los informes.
           $PSNativeCommandUseErrorActionPreference = $false
-          & pwsh -NoProfile -File ./scripts/benchmark-10m.ps1 -Profile stress150
+          & pwsh -NoProfile -File ./scripts/benchmark-10m.ps1 -Profile stress150 -Records 1000
           $exitCode = $LASTEXITCODE
           Write-Host "Stress150 process exit code: $exitCode"
           $dirs = @(Get-ChildItem -Path reports -Directory -Filter 'prueba-stress150-*')
