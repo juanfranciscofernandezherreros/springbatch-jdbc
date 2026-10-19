@@ -46,6 +46,28 @@ jobs:
           $logText = Get-Content (Join-Path $dir 'progreso.log') -Raw
           if ($logText -notmatch 'AVANCE:') { throw "No se generaron avances de lectura/escritura" }
           if ($logText -notmatch 'BENCHMARK TERMINADO') { throw "Falta el cierre correcto del benchmark" }
+      - name: Single-partition smoke test (1 worker, 1000 records)
+        shell: pwsh
+        run: ./scripts/benchmark-10m.ps1 -Records 1000 -SinglePartition
+      - name: Verify single-partition HTML and metadata
+        shell: pwsh
+        run: |
+          $reports = @(Get-ChildItem -Path reports -Directory -Filter 'particion-unica-10m-*')
+          if ($reports.Count -ne 1) { throw "Se esperaba un informe de particion unica" }
+          $dir = $reports[0].FullName
+          foreach ($file in @('index.html','prueba-single.html','resumen.csv','progreso.log','logs/job-single.log')) {
+            if (-not (Test-Path (Join-Path $dir $file))) { throw "Falta $file en $dir" }
+          }
+          $rows = @(Import-Csv (Join-Path $dir 'resumen.csv'))
+          if ($rows.Count -ne 1) { throw "Se esperaba exactamente una prueba" }
+          $r = $rows[0]
+          if ($r.Id -ne 'single' -or $r.Grid -ne '1' -or $r.Threads -ne '1' -or
+              $r.Chunk -ne '500' -or $r.Page -ne '1000' -or $r.DbPool -ne '6' -or
+              $r.Status -ne 'COMPLETED' -or $r.Read -ne '1000' -or $r.Written -ne '1000') {
+            throw "Configuracion o contadores inesperados: $($r | Out-String)"
+          }
+          $progress = Get-Content (Join-Path $dir 'progreso.log') -Raw
+          if ($progress -notmatch 'PRUEBA single AVANCE:') { throw "Falta progreso de particion unica" }
       - name: Upload HTML smoke reports
         if: always()
         uses: actions/upload-artifact@v4
