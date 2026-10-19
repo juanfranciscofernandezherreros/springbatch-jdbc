@@ -1,0 +1,41 @@
+name: batch-10m
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: batchdb
+      POSTGRES_USER: batch
+      POSTGRES_PASSWORD: batch
+    ports:
+      - "15432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U batch -d batchdb"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  batch:
+    profiles: ["job"]
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://db:5432/batchdb
+      DB_USER: batch
+      DB_PASSWORD: batch
+      DB_POOL_SIZE: 12
+      BATCH_CHUNK_SIZE: ${BATCH_CHUNK_SIZE:-500}
+      BATCH_PAGE_SIZE: ${BATCH_PAGE_SIZE:-1000}
+      BATCH_GRID_SIZE: ${BATCH_GRID_SIZE:-8}
+      BATCH_THREADS: ${BATCH_THREADS:-4}
+      BATCH_MAX_SKIPS: ${BATCH_MAX_SKIPS:-0}
+      BATCH_FAIL_AT_ID: ${BATCH_FAIL_AT_ID:-0}
+      JAVA_TOOL_OPTIONS: "-Xms128m -Xmx512m -XX:+ExitOnOutOfMemoryError"
+    restart: "no"
+
+volumes:
+  pgdata:

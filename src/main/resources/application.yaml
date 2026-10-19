@@ -1,0 +1,33 @@
+spring:
+  application:
+    name: batch-10m
+  main:
+    web-application-type: none
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:15432/batchdb}
+    username: ${DB_USER:batch}
+    password: ${DB_PASSWORD:batch}
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:12}
+      minimum-idle: 2
+      connection-timeout: 30000
+  batch:
+    job:
+      enabled: false
+    jdbc:
+      initialize-schema: never  # db/init/02_batch_metadata.sql crea las tablas
+app:
+  run: false
+  job-key: ''
+  batch:
+    chunk-size: ${BATCH_CHUNK_SIZE:500}
+    page-size: ${BATCH_PAGE_SIZE:1000}
+    grid-size: ${BATCH_GRID_SIZE:8}
+    threads: ${BATCH_THREADS:4}
+    max-skips: ${BATCH_MAX_SKIPS:0}
+    fail-at-id: ${BATCH_FAIL_AT_ID:0}
+logging:
+  level:
+    root: INFO
+    org.springframework.batch: INFO
+    com.example.batch10m: INFO
