@@ -14,6 +14,50 @@ test-batch.bat 10000000
 
 El script verifica que existan exactamente diez millones en el origen y el destino, que la ejecución termine `COMPLETED` y que los contadores del job registren exactamente diez millones de lecturas y escrituras, sin saltos. Cada lanzamiento del `.bat` crea un proyecto Docker **aislado** con una base de datos vacía y puerto temporal. Tanto si el job termina correctamente como si falla, ejecuta `docker compose -p <proyecto-temporal> down --volumes --rmi local --remove-orphans`: borra los contenedores, el volumen PostgreSQL y la imagen local de esa prueba. **No elimina los otros proyectos Docker, ni las imágenes base compartidas, ni la caché global de compilación**. Si el `.bat` se cierra a la fuerza, es posible que tengas que ejecutar el comando de limpieza impreso en consola. La prueba de 10 millones todavía no ha sido ejecutada de extremo a extremo en un equipo Windows.
 
+## Benchmark secuencial con HTML (Windows)
+
+**Menú:** ejecuta `test-batch.bat` y elige la opción **5**. Alternativamente,
+haz doble clic en **`benchmark-10m.bat`**. Requiere Docker Desktop y Windows
+PowerShell 5.1 (o una instalación de PowerShell compatible con el comando del BAT).
+
+El benchmark ejecuta **en orden, sin solapamientos**, cuatro trabajos sobre
+los mismos **10.000.000 registros**. Carga una única vez `source_events`
+y vacía únicamente `processed_events` y `rejected_events` **entre**
+las cuatro pasadas. No borra las tablas de metadatos de Spring Batch entre
+ejecuciones; cada prueba usa una clave de job diferente.
+
+| HTML de prueba | Chunk | Página | Particiones | Workers |
+|---|---:|---:|---:|---:|
+| `prueba-base.html` | 500 | 1.000 | 8 | 4 |
+| `prueba-A.html` | 1.000 | 1.000 | 8 | 4 |
+| `prueba-B.html` | 1.000 | 1.000 | 12 | 6 |
+| `prueba-C.html` | 2.000 | 1.000 | 16 | 8 |
+
+Los resultados se guardan en **`reports/benchmark-10m-FECHA-IDENTIFICADOR/`**,
+con `index.html` (comparación), un HTML por cada prueba completada,
+`resumen.csv` y los logs de cada trabajo en `logs/`.
+
+La duración y la velocidad de procesamiento proceden de los metadatos de
+Spring Batch. El dato de memoria es un aproximado de **pico de heap de la JVM**
+sacado del log `PERF_RESULT`: **no** equivale a RAM del contenedor.
+El tiempo **no incluye** la creación de los 10 millones de filas,
+la compilación Java ni la limpieza de Docker.
+
+**Aislamiento:** el benchmark utiliza un nombre de proyecto Docker temporal.
+Al acabar (también si falla) elimina sus contenedores, su volumen y su imagen
+local. Los HTML/CSV/logs quedan guardados en tu equipo. Un cierre forzado
+de la ventana puede impedir la limpieza; en ese caso revisa el mensaje
+mostrado por el script.
+
+**Prueba de humo:** para comprobar el flujo sin cargar 10 millones
+puedes ejecutar desde CMD `benchmark-10m.bat -Records 1000`.
+Para las pruebas de rendimiento reales, no pases parámetros.
+
+**Limitación del experimento:** las pruebas son secuenciales pero la caché
+de PostgreSQL y del sistema operativo puede calentar entre pasadas. No se
+debe concluir que una configuración es mejor de forma definitiva sin
+repeticiones en diferente orden y seguimiento de I/O.
+
 ## Arranque rápido
 
 Requisitos: Docker Compose v2, espacio libre para datos, índices y WAL; Bash o WSL para ejecutar los scripts.
