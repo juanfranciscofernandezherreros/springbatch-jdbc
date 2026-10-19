@@ -1,6 +1,6 @@
 #Requires -Version 5.1
 # Benchmark secuencial: base, A, B y C. Cada test produce HTML.
-# Ejecutar desde Windows con Docker Desktop: benchmark-10m.bat
+# Ejecutar desde Windows con Docker Desktop: test-batch.bat (opcion 5)
 param([ValidateRange(1,10000000)][long]$Records = 10000000)
 
 $ErrorActionPreference = 'Stop'
@@ -25,17 +25,29 @@ $scenarios = @(
 
 function EscapeHtml([string]$s) { return [System.Net.WebUtility]::HtmlEncode($s) }
 function Invoke-DockerCommand([string[]]$argv) {
-  # En Windows PowerShell 5.1 Docker escribe mensajes normales en stderr.
-  # No deben convertirse en una excepcion salvo que el exit code sea distinto de 0.
-  $previousPreference = $ErrorActionPreference
-  $ErrorActionPreference = 'Continue'
+  # Separar stdout de stderr es indispensable con PowerShell 5.1:
+  # Docker Compose puede escribir progreso en stderr y romper la conversion
+  # a [long] de los resultados de psql si se mezclan los dos streams.
+  $outPath = [System.IO.Path]::GetTempFileName()
+  $errPath = [System.IO.Path]::GetTempFileName()
   try {
-    $out = @(& docker @argv 2>&1)
-    $code = $LASTEXITCODE
+    $oldPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+      & docker @argv 1> $outPath 2> $errPath
+      $code = $LASTEXITCODE
+    }
+    finally { $ErrorActionPreference = $oldPreference }
+    $out = [System.IO.File]::ReadAllText($outPath)
+    $err = [System.IO.File]::ReadAllText($errPath)
+    if ($code -ne 0) {
+      throw "Docker termino con codigo $code: docker $($argv -join ' ')`n$out`n$err"
+    }
+    return $out.Trim()
   }
-  finally { $ErrorActionPreference = $previousPreference }
-  if ($code -ne 0) { throw "Docker fallo: docker $($argv -join ' ') | $($out -join ' ')" }
-  return $out
+  finally {
+    Remove-Item -LiteralPath $outPath,$errPath -Force -ErrorAction SilentlyContinue
+  }
 }
 function Sql([string]$query) {
   $argv = @('compose','-p',$project,'exec','-T','db','psql','-X','-v','ON_ERROR_STOP=1','-U','batch','-d','batchdb','-A','-t','-c',$query)
@@ -143,14 +155,25 @@ try {
     try {
       [void](Sql 'TRUNCATE TABLE processed_events,rejected_events;')
       $commandArgs=@('compose','-p',$project,'run','--rm','batch','--app.run=true',"--app.job-key=$key")
-      $previousPreference = $ErrorActionPreference
-      $ErrorActionPreference = 'Continue'
+      $jobOut = [System.IO.Path]::GetTempFileName()
+      $jobErr = [System.IO.Path]::GetTempFileName()
       try {
-        & docker @commandArgs 2>&1 | Tee-Object -FilePath $log | Out-Host
-        $jobExitCode = $LASTEXITCODE
+        $oldPreference = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+          & docker @commandArgs 1> $jobOut 2> $jobErr
+          $jobExitCode = $LASTEXITCODE
+        }
+        finally { $ErrorActionPreference = $oldPreference }
+        $logContent = [System.IO.File]::ReadAllText($jobOut) + [Environment]::NewLine +
+                      [System.IO.File]::ReadAllText($jobErr)
+        [System.IO.File]::WriteAllText($log,$logContent,[System.Text.Encoding]::UTF8)
+        $logContent | Out-Host
       }
-      finally { $ErrorActionPreference = $previousPreference }
-      if ($jobExitCode -ne 0) { throw "Spring Batch falló (exit=$jobExitCode). Revisa $log" }
+      finally {
+        Remove-Item -LiteralPath $jobOut,$jobErr -Force -ErrorAction SilentlyContinue
+      }
+      if ($jobExitCode -ne 0) { throw "Spring Batch fallo (codigo=$jobExitCode). Log: $log" }
       $m=Metrics $key
       $r.Status=$m.Status; $r.Read=$m.Read; $r.Written=$m.Written; $r.Skipped=$m.Skipped
       $r.Seconds=[math]::Round($m.Millis/1000.0,3)
@@ -190,5 +213,6 @@ finally {
     if ($LASTEXITCODE -ne 0) { Write-Warning "Limpieza incompleta: docker compose -p $project down --volumes --rmi local --remove-orphans" }
   }
   Write-Host "Informes conservados: $reportDir"
+  Write-Host "Abre en tu navegador: $(Join-Path $reportDir 'index.html')"
 }
 if ($failure) { exit 1 }
