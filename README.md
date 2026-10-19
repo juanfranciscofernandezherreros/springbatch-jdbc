@@ -14,6 +14,31 @@ test-batch.bat 10000000
 
 El script verifica que existan exactamente diez millones en el origen y el destino, que la ejecución termine `COMPLETED` y que los contadores del job registren exactamente diez millones de lecturas y escrituras, sin saltos. Cada lanzamiento del `.bat` crea un proyecto Docker **aislado** con una base de datos vacía y puerto temporal. Tanto si el job termina correctamente como si falla, ejecuta `docker compose -p <proyecto-temporal> down --volumes --rmi local --remove-orphans`: borra los contenedores, el volumen PostgreSQL y la imagen local de esa prueba. **No elimina los otros proyectos Docker, ni las imágenes base compartidas, ni la caché global de compilación**. Si el `.bat` se cierra a la fuerza, es posible que tengas que ejecutar el comando de limpieza impreso en consola. La prueba de 10 millones todavía no ha sido ejecutada de extremo a extremo en un equipo Windows.
 
+## Prueba más simple con límite de 500 MB
+
+Solo necesitas el archivo **`test-batch.bat`** que ya existe en este repositorio:
+elige la **opción 7** o ejecútalo desde CMD con `test-batch.bat simple`.
+
+El perfil `simple` de `test-profiles.csv` configura **1.000 registros, una
+partición, un trabajador, chunk de 500, página de 1.000, seis conexiones JDBC,
+heap máximo Java de 256 MiB y límite de 500 MiB para el contenedor de Spring Batch**.
+PostgreSQL **no tiene un límite de memoria añadido**.
+
+```bat
+git pull origin main
+test-batch.bat simple
+```
+
+Al terminar genera un HTML `prueba-simple.html` y los logs bajo
+`reports/prueba-simple-*/` y limpia los contenedores temporales.
+Este límite es para toda la memoria del contenedor Batch; si se supera,
+Docker podría finalizarlo por falta de memoria (OOM). Para comprobar
+los parámetros sin ejecutar Docker:
+
+```bat
+test-batch.bat -Profile simple -ValidateOnly
+```
+
 ## Configuración parametrizada de todas las pruebas (Windows)
 
 El **único archivo ejecutable BAT** es `test-batch.bat`. Todas sus opciones
@@ -27,6 +52,7 @@ leen `test-profiles.csv`; cada fila corresponde a un perfil:
 | 4 | `custom` | Cantidad introducida manualmente |
 | 5 | `base`, `A`, `B`, `C` | Cuatro escenarios secuenciales |
 | 6 | `single` | Una partición y un trabajador |
+| 7 | `simple` | 1.000 registros, una partición, un hilo, 500 MiB para Batch |
 
 Se pueden editar `Records`, `Chunk`, `Page`, `Grid`, `Threads`,
 `Pool`, `HeapMiB`, `MemoryMiB` y `SeedBlock` en
