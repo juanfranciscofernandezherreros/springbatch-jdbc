@@ -8,6 +8,7 @@ if not exist "test-profiles.csv" goto :missing
 if not exist "scripts\benchmark-10m.ps1" goto :missing
 
 set "RUNARGS="
+set "HAS_CLI_OPTIONS="
 if /I "%~1"=="--help" goto :help
 if /I "%~1"=="/?" goto :help
 REM Todos los perfiles del menu y los cuatro escenarios del benchmark aceptan
@@ -36,6 +37,7 @@ goto :menu
 echo(%~1| findstr /R "^[0-9][0-9]*$" >nul
 if errorlevel 1 goto :passthrough
 set "RUNARGS=-Profile custom -Records %~1"
+set "HAS_CLI_OPTIONS=1"
 shift
 goto :append_cli
 
@@ -54,34 +56,30 @@ echo   [7] PRUEBA SIMPLE: 1.000 filas, 1 hilo, 500 MB RAM
 echo   [8] ESTRES: 10 millones, 1 hilo, 150 MB RAM (posible OOM)
 echo   [0] Salir
 echo.
-echo Los valores de cada prueba se editan en test-profiles.csv
+echo Pulsa Enter al introducir cada parametro para usar el valor por defecto.
+echo Los valores iniciales de cada prueba se leen de test-profiles.csv
 echo.
 choice /C 123456780 /N /M "Selecciona una opcion: "
 if errorlevel 9 exit /b 0
 if errorlevel 8 set "RUNARGS=-Profile stress150"
-if errorlevel 8 goto :execute
+if errorlevel 8 goto :interactive_execute
 if errorlevel 7 set "RUNARGS=-Profile simple"
-if errorlevel 7 goto :execute
+if errorlevel 7 goto :interactive_execute
 if errorlevel 6 set "RUNARGS=-Profile single"
-if errorlevel 6 goto :execute
+if errorlevel 6 goto :interactive_execute
 if errorlevel 5 set "RUNARGS=-Profile benchmark"
-if errorlevel 5 goto :execute
+if errorlevel 5 goto :interactive_execute
 if errorlevel 4 goto :custom
 if errorlevel 3 set "RUNARGS=-Profile full"
-if errorlevel 3 goto :execute
+if errorlevel 3 goto :interactive_execute
 if errorlevel 2 set "RUNARGS=-Profile medium"
-if errorlevel 2 goto :execute
+if errorlevel 2 goto :interactive_execute
 set "RUNARGS=-Profile quick"
-goto :execute
+goto :interactive_execute
 
 :custom
-echo.
-set "RECORDS="
-set /p "RECORDS=Registros a procesar (1-10000000): "
-echo(!RECORDS!| findstr /R "^[0-9][0-9]*$" >nul
-if errorlevel 1 goto :invalid
-set "RUNARGS=-Profile custom -Records !RECORDS!"
-goto :execute
+set "RUNARGS=-Profile custom"
+goto :interactive_execute
 
 :passthrough
 REM Modo explicito: test-batch.bat -Profile ... o -ListProfiles
@@ -89,11 +87,19 @@ set "RUNARGS=%*"
 goto :execute
 
 :append_cli
-if "%~1"=="" goto :execute
+if "%~1"=="" (
+    if defined HAS_CLI_OPTIONS goto :execute
+    goto :interactive_execute
+)
 REM Usar %1 conserva comillas de rutas como "C:\Mis informes".
+set "HAS_CLI_OPTIONS=1"
 set "RUNARGS=!RUNARGS! %1"
 shift
 goto :append_cli
+
+:interactive_execute
+set "RUNARGS=!RUNARGS! -Interactive"
+goto :execute
 
 :execute
 where powershell.exe >nul 2>nul
@@ -129,10 +135,14 @@ goto :fatal
 
 :help
 echo USO: test-batch.bat [quick ^| medium ^| full ^| custom ^| benchmark ^| base ^| A ^| B ^| C ^| single ^| simple ^| stress150 ^| cantidad] [opciones]
-echo O sin argumentos para abrir el menu de pruebas.
+echo O sin argumentos para abrir el menu de pruebas y responder preguntas.
+echo Cada pregunta muestra el valor por defecto. Pulsa Enter para conservarlo.
+echo Con perfil sin parametros, p.ej. test-batch.bat single, tambien pregunta.
+echo Para ejecutar sin preguntas usa -Profile single o pasa algun parametro CLI.
+echo Para preguntar con parametros CLI: test-batch.bat -Profile single -Interactive.
 echo Cada prueba se configura en test-profiles.csv y se puede sobrescribir desde el CLI.
 echo Listar todas: test-batch.bat -ListProfiles
-echo Opciones: -Records N -Chunk N -Page N -Grid N -Threads N -Pool N
+echo Opciones: -Records N -Chunk N -Page N -Grid N -Threads N -Pool N -Interactive
 echo           -HeapMiB N -MemoryMiB N -SeedBlock N -ReportsDir "RUTA"
 echo Ejemplo: test-batch.bat medium -Records 100000 -Grid 1 -Threads 1 -Pool 6
 echo Individual: test-batch.bat A -Records 1000 -ReportsDir "C:\Develop\springbatch-jdbc\reports"
