@@ -27,7 +27,7 @@ services:
       DB_URL: jdbc:postgresql://db:5432/batchdb
       DB_USER: batch
       DB_PASSWORD: batch
-      DB_POOL_SIZE: 12
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-12}
       BATCH_CHUNK_SIZE: ${BATCH_CHUNK_SIZE:-500}
       BATCH_PAGE_SIZE: ${BATCH_PAGE_SIZE:-1000}
       BATCH_GRID_SIZE: ${BATCH_GRID_SIZE:-8}
