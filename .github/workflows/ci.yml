@@ -71,7 +71,7 @@ jobs:
       - name: Validate all test profiles without Docker
         shell: pwsh
         run: |
-          foreach ($profile in @('quick','medium','full','custom','single','benchmark')) {
+          foreach ($profile in @('quick','medium','full','custom','single','simple','benchmark')) {
             ./scripts/benchmark-10m.ps1 -Profile $profile -Records 1000 -ValidateOnly
             if ($LASTEXITCODE -ne 0) { throw "Perfil invalido: $profile" }
           }
@@ -92,6 +92,25 @@ jobs:
             throw "Override no aplicado: $($r | Out-String)"
           }
           if (-not (Test-Path (Join-Path $dir 'prueba-quick.html'))) { throw "Falta HTML quick" }
+      - name: Simple 500MiB Batch memory smoke test
+        shell: pwsh
+        run: ./scripts/benchmark-10m.ps1 -Profile simple
+      - name: Verify simple test limits and HTML report
+        shell: pwsh
+        run: |
+          $dirs = @(Get-ChildItem -Path reports -Directory -Filter 'prueba-simple-*')
+          if ($dirs.Count -ne 1) { throw "Se esperaba un informe simple" }
+          $dir = $dirs[0].FullName
+          foreach ($file in @('index.html','prueba-simple.html','resumen.csv','progreso.log','logs/job-simple.log')) {
+            if (-not (Test-Path (Join-Path $dir $file))) { throw "Falta $file" }
+          }
+          $r = @(Import-Csv (Join-Path $dir 'resumen.csv'))[0]
+          if ($r.Id -ne 'simple' -or $r.Read -ne '1000' -or $r.Written -ne '1000' -or
+              $r.Grid -ne '1' -or $r.Threads -ne '1' -or
+              $r.MemoryLimitMiB -ne '500' -or $r.HeapLimitMiB -ne '256' -or
+              $r.Status -ne 'COMPLETED') {
+            throw "Configuracion simple inesperada: $($r | Out-String)"
+          }
       - name: Upload HTML smoke reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -122,6 +141,8 @@ jobs:
           call test-batch.bat -Profile custom -Records 1000 -ValidateOnly
           if errorlevel 1 exit /b 1
           call test-batch.bat -Profile single -Records 1000 -Grid 1 -Threads 1 -ValidateOnly
+          if errorlevel 1 exit /b 1
+          call test-batch.bat -Profile simple -ValidateOnly
           if errorlevel 1 exit /b 1
           call test-batch.bat -Profile benchmark -Records 1000 -ValidateOnly
           if errorlevel 1 exit /b 1
