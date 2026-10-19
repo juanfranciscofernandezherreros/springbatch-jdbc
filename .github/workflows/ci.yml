@@ -34,3 +34,23 @@ jobs:
           name: benchmark-smoke
           path: reports/
           if-no-files-found: warn
+  windows-bat:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate single Windows BAT entrypoint
+        shell: cmd
+        run: |
+          call test-batch.bat --help
+          if errorlevel 1 exit /b 1
+          if exist benchmark-10m.bat exit /b 1
+      - name: Validate PowerShell 5.1 benchmark syntax
+        shell: powershell
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile('scripts/benchmark-10m.ps1', [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | Format-List | Out-String | Write-Error
+            exit 1
+          }
