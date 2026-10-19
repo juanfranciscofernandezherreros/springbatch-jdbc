@@ -7,7 +7,7 @@ services:
       POSTGRES_USER: batch
       POSTGRES_PASSWORD: batch
     ports:
-      - "15432:5432"
+      - "${DB_HOST_PORT:-15432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d:ro
