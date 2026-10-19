@@ -41,7 +41,7 @@ function Invoke-DockerCommand([string[]]$argv) {
     $out = [System.IO.File]::ReadAllText($outPath)
     $err = [System.IO.File]::ReadAllText($errPath)
     if ($code -ne 0) {
-      throw "Docker termino con codigo $code: docker $($argv -join ' ')`n$out`n$err"
+      throw "Docker termino con codigo ${code}: docker $($argv -join ' ')`n$out`n$err"
     }
     return $out.Trim()
   }
