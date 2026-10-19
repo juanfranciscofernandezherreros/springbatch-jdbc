@@ -6,6 +6,8 @@ if errorlevel 1 goto :fail
 
 if not exist "compose.yaml" goto :missing_compose
 if /I "%~1"=="benchmark" goto :benchmark_menu
+if /I "%~1"=="single" goto :single_partition_menu
+if /I "%~1"=="particion" goto :single_partition_menu
 if /I "%~1"=="--help" goto :help
 if /I "%~1"=="/?" goto :help
 set "REGISTROS=%~1"
@@ -21,10 +23,12 @@ echo   [2] 1.000.000 registros (intermedia)
 echo   [3] 10.000.000 registros (prueba completa)
 echo   [4] Otra cantidad (max. 10.000.000)
 echo   [5] BENCHMARK: 4 pruebas de 10 millones + HTML
+echo   [6] UNA PARTICION: 10 millones, 1 hilo + HTML
 echo   [0] Salir
 echo.
-choice /C 123450 /N /M "Selecciona una opcion: "
-if errorlevel 6 exit /b 0
+choice /C 1234560 /N /M "Selecciona una opcion: "
+if errorlevel 7 exit /b 0
+if errorlevel 6 goto :single_partition_menu
 if errorlevel 5 goto :benchmark_menu
 if errorlevel 4 goto :custom
 if errorlevel 3 (
@@ -133,7 +137,16 @@ echo.
 set "RESULT=0"
 goto :finish
 
+:single_partition_menu
+set "BATCH_MODE=-SinglePartition"
+set "BATCH_DESC=PRUEBA INDIVIDUAL: 10.000.000 registros, 1 particion, 1 hilo, chunk=500, pagina=1000, pool=6."
+goto :run_performance
+
 :benchmark_menu
+set "BATCH_MODE="
+set "BATCH_DESC=BENCHMARK SECUENCIAL: BASE, A, B y C. 10.000.000 registros por prueba."
+
+:run_performance
 where powershell.exe >nul 2>nul
 if errorlevel 1 (
     echo ERROR: PowerShell de Windows no esta instalado o no aparece en PATH.
@@ -147,10 +160,10 @@ if not exist "%~dp0scripts\benchmark-10m.ps1" (
     exit /b 1
 )
 echo.
-echo BENCHMARK SECUENCIAL: BASE, A, B y C. 10.000.000 registros por prueba.
-echo Los HTML individuales y la comparativa se guardan en reports\.
+echo !BATCH_DESC!
+echo Los informes HTML, CSV y logs se guardan en reports\.
 echo.
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\benchmark-10m.ps1"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\benchmark-10m.ps1" !BATCH_MODE!
 set "BENCH_EXIT=%ERRORLEVEL%"
 echo.
 if "%BENCH_EXIT%"=="0" (
@@ -162,9 +175,11 @@ pause
 exit /b %BENCH_EXIT%
 
 :help
-echo USO: test-batch.bat [cantidad ^| benchmark ^| --help]
-echo Sin argumentos muestra el menu. Opcion 5: 4 pruebas secuenciales + informes HTML.
-echo Ejecutar directamente: test-batch.bat benchmark
+echo USO: test-batch.bat [cantidad ^| benchmark ^| single ^| --help]
+echo Sin argumentos muestra el menu.
+echo Opcion 5: 4 pruebas secuenciales + informes HTML.
+echo Opcion 6: una particion, un hilo, 10 millones + informe HTML.
+echo Acceso directo: test-batch.bat single
 exit /b 0
 
 :invalid_count
