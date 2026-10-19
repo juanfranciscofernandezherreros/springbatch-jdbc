@@ -14,6 +14,50 @@ test-batch.bat 10000000
 
 El script verifica que existan exactamente diez millones en el origen y el destino, que la ejecución termine `COMPLETED` y que los contadores del job registren exactamente diez millones de lecturas y escrituras, sin saltos. Cada lanzamiento del `.bat` crea un proyecto Docker **aislado** con una base de datos vacía y puerto temporal. Tanto si el job termina correctamente como si falla, ejecuta `docker compose -p <proyecto-temporal> down --volumes --rmi local --remove-orphans`: borra los contenedores, el volumen PostgreSQL y la imagen local de esa prueba. **No elimina los otros proyectos Docker, ni las imágenes base compartidas, ni la caché global de compilación**. Si el `.bat` se cierra a la fuerza, es posible que tengas que ejecutar el comando de limpieza impreso en consola. La prueba de 10 millones todavía no ha sido ejecutada de extremo a extremo en un equipo Windows.
 
+## Índice general de informes: reports/index.html
+
+**Un único HTML para ver TODAS las ejecuciones**, incluidas las antiguas,
+los benchmarks con escenarios base/A/B/C, las pruebas manuales, las que han
+fallado por memoria y los informes guardados en subcarpetas bajo reports.
+
+El archivo principal es:
+
+`C:\Develop\springbatch-jdbc\reports\index.html`
+
+Para crearlo ahora a partir de todos los informes **ya existentes**, sin
+volver a lanzar ninguna prueba:
+
+```bat
+cd /d C:\Develop\springbatch-jdbc
+git pull origin main
+test-batch.bat reports
+```
+
+También puedes abrir `test-batch.bat` y elegir **[R] VER TODOS LOS REPORTES**.
+Este comando reconstruye el índice maestro y lo abre en el navegador. **No
+elimina, modifica ni vuelve a procesar los informes individuales**.
+
+A partir de ahora se actualiza automáticamente al empezar cada ejecución,
+al completar cada escenario y al terminar o fallar. Si lo dejas abierto,
+la página se recarga automáticamente **cada 20 segundos** para mostrar los
+nuevos reportes; también puedes refrescarla manualmente con F5.
+
+El índice muestra fecha, estado (COMPLETED / FAILED / EN CURSO), registros
+escritos y enlaces directos a cada HTML, al resumen CSV y al progreso. Tiene
+un cuadro de búsqueda y ordena el historial desde la ejecución más reciente.
+Cada ejecución mantiene su propio `index.html` de detalle.
+
+Si usas una raíz de informes distinta con `-ReportsDir`, el índice se crea
+en esa raíz. Puedes reconstruirlo directamente así:
+
+```bat
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\update-reports-index.ps1 -ReportsDir "C:\Develop\informes batch"
+```
+
+**Nota:** el índice es un archivo local de tu PC, generado con los informes
+que encuentre en esa carpeta; los reportes dentro de `reports/` no se
+suben al repositorio porque están excluidos por `.gitignore`.
+
 ## Opcion [9]: MI PRUEBA, con todos los valores introducidos por ti
 
 Para crear una **prueba a medida** desde la consola de Windows:
