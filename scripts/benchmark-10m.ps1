@@ -285,6 +285,16 @@ No incluye inserción inicial, compilación ni limpieza. Informe medido en el PC
 "@
   [System.IO.File]::WriteAllText((Join-Path $reportDir "prueba-$($r.Id).html"),$html,[System.Text.Encoding]::UTF8)
 }
+# El indice maestro de la raiz agrupa todas las sesiones, incluso historicas.
+# Un error al reconstruirlo no debe convertir en fallido el job de Batch.
+function UpdateMasterIndex {
+  try {
+    & (Join-Path $PSScriptRoot 'update-reports-index.ps1') -ReportsDir $reportsRoot -Quiet
+  }
+  catch {
+    Write-Warning ("No se pudo actualizar reports/index.html: " + $_.Exception.Message)
+  }
+}
 function SaveIndex {
   $trs = foreach($r in $results) {
     $t = if ($null -ne $r.Seconds) { '{0:N2}' -f $r.Seconds } else { '-' }
@@ -313,6 +323,7 @@ $($trs -join [Environment]::NewLine)
 "@
   [System.IO.File]::WriteAllText((Join-Path $reportDir 'index.html'),$html,[System.Text.Encoding]::UTF8)
   $results | Export-Csv -NoTypeInformation -Encoding UTF8 -Path (Join-Path $reportDir 'resumen.csv')
+  UpdateMasterIndex
 }
 function Metrics([string]$jobKey) {
   $query = "SELECT e.status || '|' || COALESCE(ROUND(EXTRACT(EPOCH FROM(e.end_time-e.start_time))*1000)::bigint,0)::text || '|' || COALESCE(SUM(s.read_count),0)::text || '|' || COALESCE(SUM(s.write_count),0)::text || '|' || COALESCE(SUM(s.read_skip_count+s.process_skip_count+s.write_skip_count),0)::text FROM batch_job_execution e JOIN batch_job_execution_params p ON p.job_execution_id=e.job_execution_id LEFT JOIN batch_step_execution s ON s.job_execution_id=e.job_execution_id AND s.step_name LIKE 'workerStep:%' WHERE p.parameter_name='runKey' AND p.parameter_value='$jobKey' GROUP BY e.job_execution_id,e.status,e.start_time,e.end_time ORDER BY e.job_execution_id DESC LIMIT 1;"
@@ -324,6 +335,8 @@ function Metrics([string]$jobKey) {
 
 try {
   ProgressLog ("{0}: {1} prueba(s) de {2:N0} registros" -f $modeLabel,$scenarioCount,$Records)
+  UpdateMasterIndex
+  ProgressLog ("Indice general de todas las pruebas: {0}" -f (Join-Path $reportsRoot 'index.html'))
   if ($mode -eq 'stress150') {
     ProgressLog "AVISO: prueba de estres intencionada de 150 MiB para Batch; puede terminar por OOM o fallar al arrancar. PostgreSQL no tiene este limite."
   }
@@ -452,7 +465,9 @@ finally {
     & docker compose -p $project down --volumes --rmi local --remove-orphans | Out-Host
     if ($LASTEXITCODE -ne 0) { Write-Warning "Limpieza incompleta: docker compose -p $project down --volumes --rmi local --remove-orphans" }
   }
+  UpdateMasterIndex
   Write-Host "Informes conservados: $reportDir"
-  Write-Host "Abre en tu navegador: $(Join-Path $reportDir 'index.html')"
+  Write-Host "Abre el indice general de todos los reportes: $(Join-Path $reportsRoot 'index.html')"
+  Write-Host "Abre el informe de esta ejecucion: $(Join-Path $reportDir 'index.html')"
 }
 if ($failure) { exit 1 }
