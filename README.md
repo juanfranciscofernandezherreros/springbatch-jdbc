@@ -14,6 +14,50 @@ test-batch.bat 10000000
 
 El script verifica que existan exactamente diez millones en el origen y el destino, que la ejecución termine `COMPLETED` y que los contadores del job registren exactamente diez millones de lecturas y escrituras, sin saltos. Cada lanzamiento del `.bat` crea un proyecto Docker **aislado** con una base de datos vacía y puerto temporal. Tanto si el job termina correctamente como si falla, ejecuta `docker compose -p <proyecto-temporal> down --volumes --rmi local --remove-orphans`: borra los contenedores, el volumen PostgreSQL y la imagen local de esa prueba. **No elimina los otros proyectos Docker, ni las imágenes base compartidas, ni la caché global de compilación**. Si el `.bat` se cierra a la fuerza, es posible que tengas que ejecutar el comando de limpieza impreso en consola. La prueba de 10 millones todavía no ha sido ejecutada de extremo a extremo en un equipo Windows.
 
+## Opcion [9]: MI PRUEBA, con todos los valores introducidos por ti
+
+Para crear una **prueba a medida** desde la consola de Windows:
+
+```bat
+cd /d C:\Develop\springbatch-jdbc
+git pull origin main
+test-batch.bat
+```
+
+Selecciona **9 - MI PRUEBA**. La consola pregunta, uno a uno:
+**registros, bloque de carga SQL, chunk, pagina, particiones, hilos,
+pool JDBC, heap Java en MiB, RAM maxima del contenedor Batch en MiB
+y carpeta de informes**. Teclea tu valor y pulsa Enter, o pulsa
+**solo Enter para mantener el valor sugerido**. Puedes hacer una prueba
+de 10 millones de registros, 1 particion, 1 hilo y 150 MiB para
+Batch si introduces esos valores y un heap de 128 MiB. Esa configuracion
+puede fallar por memoria, pero no se garantiza un OOM.
+
+Los valores iniciales del modo manual son **1.000 registros, una
+particion, un hilo, pool de 6, heap de 256 MiB y RAM de 500 MiB**.
+Este perfil permite experimentar con RAM tan baja como 150 MiB (128
+MiB de heap y al menos 16 MiB de margen), a diferencia de los perfiles
+normales pensados para pruebas con mas margen.
+
+Tambien puedes iniciar el asistente directamente desde CMD:
+
+```bat
+test-batch.bat manual
+```
+
+Para ver un resumen y comprobar los valores sin arrancar Docker:
+
+```bat
+test-batch.bat -Profile manual -Interactive -ValidateOnly
+```
+
+Cada ejecucion guarda un **informe independiente** en
+`C:\Develop\springbatch-jdbc\reports\prueba-manual-FECHA-ID\`,
+con `index.html`, `prueba-manual.html`, `resumen.csv`,
+`progreso.log` y `logs/job-manual.log`. No se pisan otros informes.
+Los valores escritos se usan solo para esa ejecucion; el archivo CSV
+no se modifica.
+
 ## Configuracion interactiva desde CMD: Enter usa el valor por defecto
 
 El **unico `test-batch.bat`** permite introducir los parametros directamente
@@ -25,7 +69,7 @@ git pull origin main
 test-batch.bat
 ```
 
-Selecciona una opcion del menu (1-8). El BAT preguntara por los registros,
+Selecciona una opcion del menu (1-9). El BAT preguntara por los registros,
 tamaño de carga SQL, chunk, pagina, particiones, hilos, pool JDBC, heap
 Java, memoria maxima del contenedor Batch y carpeta de informes. Cada
 pregunta muestra un valor entre corchetes; **pulsa Enter para conservarlo**.
@@ -146,6 +190,7 @@ leen `test-profiles.csv`; cada fila corresponde a un perfil:
 | 6 | `single` | Una partición y un trabajador |
 | 7 | `simple` | 1.000 registros, una partición, un hilo, 500 MiB para Batch |
 | 8 | `stress150` | 10.000.000 registros, una partición, un hilo, 150 MiB para Batch; fallo de memoria posible |
+| **9** | **`manual`** | **MI PRUEBA: introducir todos los valores en la consola** |
 
 Se pueden editar `Records`, `Chunk`, `Page`, `Grid`, `Threads`,
 `Pool`, `HeapMiB`, `MemoryMiB` y `SeedBlock` en
@@ -175,6 +220,7 @@ test-batch.bat benchmark -Records 1000 -Chunk 500 -Threads 4
 test-batch.bat single -Records 100000 -Grid 1 -Threads 1 -Pool 6
 test-batch.bat simple -Records 1000
 test-batch.bat stress150 -Records 1000 -ValidateOnly
+test-batch.bat manual -Records 1000 -Grid 1 -Threads 1 -Pool 6
 ```
 
 La opción 5 incluye **cuatro escenarios independientes**, que ahora también
