@@ -16,9 +16,7 @@ El script verifica que existan exactamente diez millones en el origen y el desti
 
 ## Benchmark secuencial con HTML (Windows)
 
-**Menú:** ejecuta `test-batch.bat` y elige la opción **5**. Alternativamente,
-haz doble clic en **`benchmark-10m.bat`**. Requiere Docker Desktop y Windows
-PowerShell 5.1 (o una instalación de PowerShell compatible con el comando del BAT).
+**Único BAT:** ejecuta `test-batch.bat` y elige la opción **5**; también puedes usar `test-batch.bat benchmark` desde CMD. Requiere Docker Desktop y Windows PowerShell 5.1. El archivo interno `scripts/benchmark-10m.ps1` realiza las mediciones y genera los HTML; **no es un segundo BAT**.
 
 El benchmark ejecuta **en orden, sin solapamientos**, cuatro trabajos sobre
 los mismos **10.000.000 registros**. Carga una única vez `source_events`
@@ -49,9 +47,7 @@ local. Los HTML/CSV/logs quedan guardados en tu equipo. Un cierre forzado
 de la ventana puede impedir la limpieza; en ese caso revisa el mensaje
 mostrado por el script.
 
-**Prueba de humo:** para comprobar el flujo sin cargar 10 millones
-puedes ejecutar desde CMD `benchmark-10m.bat -Records 1000`.
-Para las pruebas de rendimiento reales, no pases parámetros.
+**Prueba de humo para desarrolladores:** desde PowerShell puedes ejecutar `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/benchmark-10m.ps1 -Records 1000`. Las pruebas completas se ejecutan con la opción 5 del BAT, sin parámetros. GitHub Actions valida automáticamente las cuatro pasadas con 1.000 filas y revisa la sintaxis en Windows.
 
 **Limitación del experimento:** las pruebas son secuenciales pero la caché
 de PostgreSQL y del sistema operativo puede calentar entre pasadas. No se
