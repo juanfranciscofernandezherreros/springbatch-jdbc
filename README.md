@@ -39,6 +39,39 @@ los parámetros sin ejecutar Docker:
 test-batch.bat -Profile simple -ValidateOnly
 ```
 
+## Prueba de estres: contenedor Spring Batch limitado a 150 MiB
+
+En el **unico `test-batch.bat`**, selecciona **[8]** o ejecuta:
+
+```bat
+git pull origin main
+test-batch.bat stress150
+```
+
+El perfil `stress150` de `test-profiles.csv` utiliza **1.000 registros,
+una particion, un trabajador, heap maximo JVM de 128 MiB y limite de memoria
+del contenedor Batch de 150 MiB** (`BATCH_MEMORY_LIMIT=150m`). PostgreSQL
+**no cambia sus limites**.
+
+La prueba es intencionalmente extrema: puede fallar al arrancar Spring Boot,
+lanzar `OutOfMemoryError` o terminar con codigo 137 (posible OOM/SIGKILL).
+**No se garantiza que falle**, ya que depende del uso real de memoria.
+El proceso marca el resultado como fallido cuando corresponde, pero conserva
+`reports/prueba-stress150-*/prueba-stress150.html`,
+`progreso.log`, `resumen.csv` y `logs/job-stress150.log`.
+En caso de fallo se muestra el codigo de salida para el diagnostico.
+Solo se eliminan los recursos temporales de este proyecto Docker.
+
+Se puede ampliar la carga para presionar al procesador sin cambiar el limite:
+
+```bat
+test-batch.bat -Profile stress150 -Records 100000
+```
+
+Esta prueba permite **menos margen de memoria** que los perfiles habituales;
+solo se admite para `stress150` y no es una configuracion recomendada para
+produccion.
+
 ## Configuración parametrizada de todas las pruebas (Windows)
 
 El **único archivo ejecutable BAT** es `test-batch.bat`. Todas sus opciones
@@ -53,6 +86,7 @@ leen `test-profiles.csv`; cada fila corresponde a un perfil:
 | 5 | `base`, `A`, `B`, `C` | Cuatro escenarios secuenciales |
 | 6 | `single` | Una partición y un trabajador |
 | 7 | `simple` | 1.000 registros, una partición, un hilo, 500 MiB para Batch |
+| 8 | `stress150` | 1.000 registros, una partición, un hilo, 150 MiB para Batch; fallo de memoria posible |
 
 Se pueden editar `Records`, `Chunk`, `Page`, `Grid`, `Threads`,
 `Pool`, `HeapMiB`, `MemoryMiB` y `SeedBlock` en
