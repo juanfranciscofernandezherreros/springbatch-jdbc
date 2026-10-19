@@ -2,7 +2,7 @@
 # Modos: benchmark secuencial base/A/B/C o prueba independiente de una particion.
 # Ejecutar desde Windows con Docker Desktop: test-batch.bat (opcion 5 o 6)
 param(
-  [ValidateSet('benchmark','quick','medium','full','custom','single','simple','stress150','base','A','B','C')]
+  [ValidateSet('benchmark','quick','medium','full','custom','single','simple','stress150','manual','base','A','B','C')]
   [string]$Profile = 'benchmark',
   [ValidateRange(0,10000000)][long]$Records = 0,
   [ValidateRange(0,100000)][int]$Chunk = 0,
@@ -57,6 +57,7 @@ $scenarios = @(foreach ($id in $ids) {
     'B' {'Seis workers'}
     'C' {'Ocho workers'}
     'single' {'Una particion'}
+    'manual' {'Prueba totalmente personalizada'}
     'simple' {'Prueba simple de 1000 registros, 500 MiB RAM'}
     'stress150' {'Prueba de estres con 150 MiB RAM; posible OOM'}
     'quick' {'Prueba rapida'}
@@ -84,7 +85,7 @@ $scenarios = @(foreach ($id in $ids) {
   if ($entry.Pool -lt $entry.Threads + 2) { throw "Pool JDBC de $id ($($entry.Pool)) debe ser al menos Threads+2 ($($entry.Threads + 2))" }
   # El perfil stress150 es intencionalmente extremo para observar OOM o fallos
   # de arranque; no es valido como configuracion de produccion.
-  $minHeadroomMiB = if ($id -eq 'stress150') { 16 } else { 128 }
+  $minHeadroomMiB = if ($id -in @('stress150','manual')) { 16 } else { 128 }
   if ($entry.HeapMiB -lt 128 -or $entry.MemoryMiB -lt $entry.HeapMiB + $minHeadroomMiB) {
     throw "En $id, HeapMiB >= 128 y MemoryMiB >= HeapMiB + $minHeadroomMiB"
   }
@@ -113,6 +114,7 @@ if ($Interactive) {
   Write-Host ''
   Write-Host 'CONFIGURACION INTERACTIVA - Enter = conservar valor entre corchetes' -ForegroundColor Cyan
   Write-Host ('Perfil seleccionado: {0}. Valores iniciales: test-profiles.csv y opciones CLI.' -f $mode)
+  if ($mode -eq 'manual') { Write-Host 'Tu prueba: configura TODOS los parametros. Para conservar un valor, pulsa Enter.' -ForegroundColor Cyan }
   $newRecords = Read-DefaultInt 'Registros' ([long]$scenarios[0].Records) 1 10000000
   $newSeedBlock = Read-DefaultInt 'Bloque de carga SQL (SeedBlock)' ([long]$scenarios[0].SeedBlock) 1 1000000
   foreach ($entry in $scenarios) {
@@ -132,7 +134,7 @@ if ($Interactive) {
     }
     $entry.HeapMiB = [int](Read-DefaultInt 'Heap maximo Java (MiB)' $entry.HeapMiB 128 65536)
     $entry.MemoryMiB = [int](Read-DefaultInt 'Memoria maxima del contenedor Batch (MiB)' $entry.MemoryMiB 128 65536)
-    $margin = if ($entry.Id -eq 'stress150') { 16 } else { 128 }
+    $margin = if ($entry.Id -in @('stress150','manual')) { 16 } else { 128 }
     while ($entry.MemoryMiB -lt $entry.HeapMiB + $margin) {
       Write-Host ('Memoria insuficiente: requiere al menos HeapMiB + {0} MiB.' -f $margin) -ForegroundColor Yellow
       $entry.HeapMiB = [int](Read-DefaultInt 'Heap maximo Java (MiB)' $entry.HeapMiB 128 65536)
