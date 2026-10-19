@@ -2,37 +2,100 @@
 # Modos: benchmark secuencial base/A/B/C o prueba independiente de una particion.
 # Ejecutar desde Windows con Docker Desktop: test-batch.bat (opcion 5 o 6)
 param(
-  [ValidateRange(1,10000000)][long]$Records = 10000000,
+  [ValidateSet('benchmark','quick','medium','full','custom','single')]
+  [string]$Profile = 'benchmark',
+  [ValidateRange(0,10000000)][long]$Records = 0,
+  [ValidateRange(0,100000)][int]$Chunk = 0,
+  [ValidateRange(0,100000)][int]$Page = 0,
+  [ValidateRange(0,256)][int]$Grid = 0,
+  [ValidateRange(0,128)][int]$Threads = 0,
+  [ValidateRange(0,256)][int]$Pool = 0,
+  [ValidateRange(0,65536)][int]$HeapMiB = 0,
+  [ValidateRange(0,65536)][int]$MemoryMiB = 0,
+  [ValidateRange(0,1000000)][int]$SeedBlock = 0,
   [switch]$SinglePartition
 )
 
 $ErrorActionPreference = 'Stop'
 Set-Location (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+# El CSV contiene la configuracion de TODAS las pruebas y puede editarse sin tocar codigo.
+$mode = if ($SinglePartition) { 'single' } else { $Profile }
+$configPath = Join-Path (Get-Location).Path 'test-profiles.csv'
+if (-not (Test-Path -LiteralPath $configPath)) { throw "Falta test-profiles.csv. Ejecuta git pull." }
+$configRows = @(Import-Csv -LiteralPath $configPath -Encoding UTF8)
+$ids = if ($mode -eq 'benchmark') { @('base','A','B','C') } else { @($mode) }
+if (@($configRows.Profile | Select-Object -Unique).Count -ne $configRows.Count) { throw 'Hay perfiles duplicados en test-profiles.csv' }
+$scenarios = foreach ($id in $ids) {
+  $row = @($configRows | Where-Object { $_.Profile -ceq $id })
+  if ($row.Count -ne 1) { throw "Debe existir exactamente un perfil '$id' en test-profiles.csv" }
+  $item = $row[0]
+  $fields = @('Records','Chunk','Page','Grid','Threads','Pool','HeapMiB','MemoryMiB','SeedBlock')
+  foreach ($field in $fields) {
+    $value = [string]$item.$field
+    if ($value -notmatch '^[0-9]+$') { throw "Valor invalido para $id/$field en CSV: '$value'" }
+  }
+  $label = switch ($id) {
+    'base' {'Configuracion actual'}
+    'A' {'Chunk de 1000'}
+    'B' {'Seis workers'}
+    'C' {'Ocho workers'}
+    'single' {'Una particion'}
+    'quick' {'Prueba rapida'}
+    'medium' {'Prueba intermedia'}
+    'full' {'Prueba completa'}
+    default {'Prueba personalizada'}
+  }
+  $entry = [pscustomobject]@{
+    Id=$id; Name=$label;
+    Records=[long]$item.Records;
+    Chunk=[int]$item.Chunk; Page=[int]$item.Page; Grid=[int]$item.Grid;
+    Threads=[int]$item.Threads; Pool=[int]$item.Pool;
+    HeapMiB=[int]$item.HeapMiB; MemoryMiB=[int]$item.MemoryMiB;
+    SeedBlock=[int]$item.SeedBlock
+  }
+  foreach ($override in @('Chunk','Page','Grid','Threads','Pool','HeapMiB','MemoryMiB','SeedBlock')) {
+    $overrideValue = (Get-Variable -Name $override -ValueOnly)
+    if ($overrideValue -gt 0) { $entry.$override = $overrideValue }
+  }
+  if ($Records -gt 0) { $entry.Records = $Records }
+  if ($entry.Records -lt 1 -or $entry.Records -gt 10000000) { throw "Registros fuera de rango en $id (1..10.000.000)" }
+  if ($entry.Chunk -lt 1 -or $entry.Page -lt 1 -or $entry.Grid -lt 1 -or $entry.Threads -lt 1 -or $entry.SeedBlock -lt 1) {
+    throw "Chunk/Page/Grid/Threads/SeedBlock deben ser positivos en $id"
+  }
+  if ($entry.Pool -lt $entry.Threads + 2) { throw "Pool JDBC de $id ($($entry.Pool)) debe ser al menos Threads+2 ($($entry.Threads + 2))" }
+  if ($entry.HeapMiB -lt 128 -or $entry.MemoryMiB -lt $entry.HeapMiB + 128) {
+    throw "En $id, HeapMiB >= 128 y MemoryMiB >= HeapMiB + 128 (margen para memoria no heap)"
+  }
+  $entry
+}
+if ($scenarios.Count -gt 1) {
+  $uniqueCounts = @($scenarios | Select-Object -ExpandProperty Records -Unique)
+  if ($uniqueCounts.Count -ne 1) { throw 'Todos los escenarios del benchmark deben tener el mismo Records en el CSV (o pasar -Records)' }
+  $uniqueBlocks = @($scenarios | Select-Object -ExpandProperty SeedBlock -Unique)
+  if ($uniqueBlocks.Count -ne 1) { throw 'Todos los escenarios del benchmark deben usar el mismo SeedBlock' }
+}
+$Records = [long]$scenarios[0].Records
+$seedBlockValue = [long]$scenarios[0].SeedBlock
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-$reportPrefix = if ($SinglePartition) { 'particion-unica-10m-' } else { 'benchmark-10m-' }
-$modeLabel = if ($SinglePartition) { 'Prueba con una particion' } else { 'Benchmark secuencial' }
+$reportPrefix = switch ($mode) {
+  'benchmark' { 'benchmark-10m-' }
+  'single' { 'particion-unica-10m-' }
+  default { 'prueba-' + $mode + '-' }
+}
+$modeLabel = switch ($mode) {
+  'benchmark' { 'Benchmark secuencial' }
+  'single' { 'Prueba con una particion' }
+  default { 'Prueba parametrizada ' + $mode }
+}
 $reportDir = Join-Path (Get-Location).Path ("reports\" + $reportPrefix + $stamp + "-" + (Get-Random -Maximum 9999))
 New-Item -ItemType Directory -Path (Join-Path $reportDir 'logs') -Force | Out-Null
 $project = 'sb10mbench-' + (Get-Random -Maximum 999999)
 $env:DB_HOST_PORT = [string](Get-Random -Minimum 30000 -Maximum 61000)
-$env:DB_POOL_SIZE = '12'
 $env:BATCH_MAX_SKIPS = '0'
 $env:BATCH_FAIL_AT_ID = '0'
 $started = $false
 $failure = $false
 $results = New-Object System.Collections.ArrayList
-$scenarios = @(
-  [pscustomobject]@{ Id='base';Name='Configuracion actual';Chunk=500;Page=1000;Grid=8;Threads=4 },
-  [pscustomobject]@{ Id='A';Name='Chunk de 1000';Chunk=1000;Page=1000;Grid=8;Threads=4 },
-  [pscustomobject]@{ Id='B';Name='Seis workers';Chunk=1000;Page=1000;Grid=12;Threads=6 },
-  [pscustomobject]@{ Id='C';Name='Ocho workers';Chunk=2000;Page=1000;Grid=16;Threads=8 }
-)
-if ($SinglePartition) {
-  $scenarios = @(
-    [pscustomobject]@{ Id='single';Name='Una particion, un trabajador';Chunk=500;Page=1000;Grid=1;Threads=1 }
-  )
-  $env:DB_POOL_SIZE = '6'
-}
 $scenarioCount = $scenarios.Count
 
 function EscapeHtml([string]$s) { return [System.Net.WebUtility]::HtmlEncode($s) }
@@ -112,6 +175,9 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;color:#a33636}footer{color:#596b
 <tr><td>Chunk</td><td>$($r.Chunk)</td></tr><tr><td>Page</td><td>$($r.Page)</td></tr>
 <tr><td>Particiones</td><td>$($r.Grid)</td></tr><tr><td>Hilos</td><td>$($r.Threads)</td></tr>
 <tr><td>Pool JDBC</td><td>$($r.DbPool)</td></tr>
+<tr><td>Heap maximo JVM</td><td>$($r.HeapLimitMiB) MiB</td></tr>
+<tr><td>Memoria maxima contenedor Spring Batch</td><td>$($r.MemoryLimitMiB) MiB</td></tr>
+<tr><td>Bloque carga de origen</td><td>$($r.SeedBlock)</td></tr>
 <tr><td>Leídos</td><td>$($r.Read)</td></tr><tr><td>Escritos</td><td>$($r.Written)</td></tr>
 <tr><td>Descartados</td><td>$($r.Skipped)</td></tr><tr><td>Estado</td><td>$status</td></tr>
 </table></section><section><h2>Registros de ejecución</h2><p><a href="logs/job-$($r.Id).log">Log completo de Spring Batch</a> · <a href="progreso.log">Progreso global</a></p></section>
@@ -128,10 +194,10 @@ function SaveIndex {
     $speed = if ($null -ne $r.Throughput) { '{0:N0}' -f $r.Throughput } else { '-' }
     "<tr><td><a href='prueba-$($r.Id).html'>$($r.Id) - $(EscapeHtml $r.Name)</a></td><td>$($r.Chunk)</td><td>$($r.Threads)</td><td>$t</td><td>$speed</td><td>$($r.Status)</td></tr>"
   }
-  $explanation = if ($SinglePartition) {
+  $explanation = if ($mode -eq 'single') {
     'Prueba independiente de un solo trabajador y una sola particion. El tiempo corresponde exclusivamente al job.'
   } else {
-    'Las cuatro pruebas usan el mismo origen; la caché de PostgreSQL puede mejorar las pasadas posteriores.'
+    'Las pruebas usan el mismo origen; la caché de PostgreSQL puede mejorar las pasadas posteriores.'
   }
   $html = @"
 <!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -173,8 +239,8 @@ try {
 
   ProgressLog "FASE 3/3: cargando $Records filas de origen una sola vez"
   $seedWatch = [System.Diagnostics.Stopwatch]::StartNew()
-  for($from=1L; $from -le $Records; $from+=250000L) {
-    $to = [math]::Min($from+249999L,$Records)
+  for($from=1L; $from -le $Records; $from+=$seedBlockValue) {
+    $to = [math]::Min($from+$seedBlockValue-1,$Records)
     $sql="INSERT INTO source_events (id,customer_id,amount,category,created_at) SELECT s,(s % 100000)+1,((s % 200000)::numeric/100),CASE (s % 3) WHEN 0 THEN 'retail' WHEN 1 THEN 'subscription' ELSE 'online' END,TIMESTAMPTZ '2026-01-01 00:00:00+00'+((s % 86400)*INTERVAL '1 second') FROM generate_series($from,$to) AS s;"
     [void](Sql $sql)
     $seedPercent = [math]::Round(100.0 * $to / $Records, 1)
@@ -189,10 +255,13 @@ try {
     $env:BATCH_PAGE_SIZE=[string]$s.Page
     $env:BATCH_GRID_SIZE=[string]$s.Grid
     $env:BATCH_THREADS=[string]$s.Threads
+    $env:DB_POOL_SIZE=[string]$s.Pool
+    $env:BATCH_HEAP_LIMIT=('{0}m' -f $s.HeapMiB)
+    $env:BATCH_MEMORY_LIMIT=('{0}m' -f $s.MemoryMiB)
     $key="bench-$($s.Id)-"+[guid]::NewGuid().ToString('N').Substring(0,16)
     $log=Join-Path $reportDir ("logs\job-$($s.Id).log")
-    $r=[pscustomobject]@{ Id=$s.Id;Name=$s.Name;Chunk=$s.Chunk;Page=$s.Page;Grid=$s.Grid;Threads=$s.Threads;DbPool=[int]$env:DB_POOL_SIZE;Seconds=$null;Throughput=$null;Read=0L;Written=0L;Skipped=0L;HeapMiB=$null;Status='NOT_STARTED';Error='';RunKey=$key }
-    ProgressLog ("PRUEBA {0}/{1}: chunk={2}, page={3}, particiones={4}, hilos={5}, pool={6}" -f $s.Id,$scenarioCount,$s.Chunk,$s.Page,$s.Grid,$s.Threads,$env:DB_POOL_SIZE)
+    $r=[pscustomobject]@{ Id=$s.Id;Name=$s.Name;Chunk=$s.Chunk;Page=$s.Page;Grid=$s.Grid;Threads=$s.Threads;DbPool=$s.Pool;HeapLimitMiB=$s.HeapMiB;MemoryLimitMiB=$s.MemoryMiB;SeedBlock=$s.SeedBlock;Seconds=$null;Throughput=$null;Read=0L;Written=0L;Skipped=0L;HeapMiB=$null;Status='NOT_STARTED';Error='';RunKey=$key }
+    ProgressLog ("PRUEBA {0}/{1}: registros={2}, chunk={3}, page={4}, particiones={5}, hilos={6}, pool={7}, heap={8}MiB, contenedor={9}MiB" -f $s.Id,$scenarioCount,$Records,$s.Chunk,$s.Page,$s.Grid,$s.Threads,$s.Pool,$s.HeapMiB,$s.MemoryMiB)
     try {
       [void](Sql 'TRUNCATE TABLE processed_events,rejected_events;')
       $commandArgs=@('compose','-p',$project,'run','--rm','batch','--app.run=true',"--app.job-key=$key")
