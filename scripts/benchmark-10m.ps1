@@ -15,6 +15,7 @@ param(
   [ValidateRange(0,1000000)][int]$SeedBlock = 0,
   [switch]$SinglePartition,
   [switch]$ValidateOnly,
+  [switch]$Interactive,
   [switch]$ListProfiles,
   [Alias('OutputDir')][string]$ReportsDir = ''
 )
@@ -94,6 +95,70 @@ if ($scenarios.Count -gt 1) {
   if ($uniqueCounts.Count -ne 1) { throw 'Todos los escenarios del benchmark deben tener el mismo Records en el CSV (o pasar -Records)' }
   $uniqueBlocks = @($scenarios | Select-Object -ExpandProperty SeedBlock -Unique)
   if ($uniqueBlocks.Count -ne 1) { throw 'Todos los escenarios del benchmark deben usar el mismo SeedBlock' }
+}
+# Modo conversacional: Enter conserva el valor CSV o su override por CLI.
+# Se ejecuta tambien con -ValidateOnly para poder revisar sin arrancar Docker.
+function Read-DefaultInt([string]$Label, [long]$Value, [long]$Min, [long]$Max) {
+  while ($true) {
+    $inputText = Read-Host ('{0} [{1}]' -f $Label,$Value)
+    if ([string]::IsNullOrWhiteSpace($inputText)) { return $Value }
+    $parsed = 0L
+    if ([long]::TryParse($inputText.Trim(),[ref]$parsed) -and $parsed -ge $Min -and $parsed -le $Max) {
+      return $parsed
+    }
+    Write-Host ('Valor no valido. Introduce un entero entre {0} y {1}, o pulsa Enter.' -f $Min,$Max) -ForegroundColor Yellow
+  }
+}
+if ($Interactive) {
+  Write-Host ''
+  Write-Host 'CONFIGURACION INTERACTIVA - Enter = conservar valor entre corchetes' -ForegroundColor Cyan
+  Write-Host ('Perfil seleccionado: {0}. Valores iniciales: test-profiles.csv y opciones CLI.' -f $mode)
+  $newRecords = Read-DefaultInt 'Registros' ([long]$scenarios[0].Records) 1 10000000
+  $newSeedBlock = Read-DefaultInt 'Bloque de carga SQL (SeedBlock)' ([long]$scenarios[0].SeedBlock) 1 1000000
+  foreach ($entry in $scenarios) {
+    $entry.Records = [long]$newRecords
+    $entry.SeedBlock = [int]$newSeedBlock
+    Write-Host ''
+    Write-Host ('-- Escenario {0} --' -f $entry.Id) -ForegroundColor Cyan
+    $entry.Chunk = [int](Read-DefaultInt 'Chunk (filas por transaccion)' $entry.Chunk 1 100000)
+    $entry.Page = [int](Read-DefaultInt 'Page (filas por pagina)' $entry.Page 1 100000)
+    $entry.Grid = [int](Read-DefaultInt 'Grid (numero de particiones)' $entry.Grid 1 256)
+    $entry.Threads = [int](Read-DefaultInt 'Threads (hilos workers)' $entry.Threads 1 128)
+    $entry.Pool = [int](Read-DefaultInt 'Pool (conexiones JDBC)' $entry.Pool 1 256)
+    while ($entry.Pool -lt $entry.Threads + 2) {
+      $minimumPool = $entry.Threads + 2
+      Write-Host ('Pool debe ser al menos Threads + 2 = {0}.' -f $minimumPool) -ForegroundColor Yellow
+      $entry.Pool = [int](Read-DefaultInt 'Pool (conexiones JDBC)' ([math]::Max($entry.Pool,$minimumPool)) $minimumPool 256)
+    }
+    $entry.HeapMiB = [int](Read-DefaultInt 'Heap maximo Java (MiB)' $entry.HeapMiB 128 65536)
+    $entry.MemoryMiB = [int](Read-DefaultInt 'Memoria maxima del contenedor Batch (MiB)' $entry.MemoryMiB 128 65536)
+    $margin = if ($entry.Id -eq 'stress150') { 16 } else { 128 }
+    while ($entry.MemoryMiB -lt $entry.HeapMiB + $margin) {
+      Write-Host ('Memoria insuficiente: requiere al menos HeapMiB + {0} MiB.' -f $margin) -ForegroundColor Yellow
+      $entry.HeapMiB = [int](Read-DefaultInt 'Heap maximo Java (MiB)' $entry.HeapMiB 128 65536)
+      $memoryFloor = $entry.HeapMiB + $margin
+      if ($memoryFloor -gt 65536) { throw 'Heap demasiado grande para el limite maximo de memoria. Reduce HeapMiB.' }
+      $entry.MemoryMiB = [int](Read-DefaultInt 'Memoria maxima contenedor Batch (MiB)' ([math]::Max($entry.MemoryMiB,$memoryFloor)) $memoryFloor 65536)
+    }
+  }
+  Write-Host ''
+  $dirAnswer = Read-Host ('Carpeta raiz de informes [{0}]' -f $reportsRoot)
+  if (-not [string]::IsNullOrWhiteSpace($dirAnswer)) {
+    $dirAnswer = $dirAnswer.Trim().Trim('"')
+    if ([System.IO.Path]::IsPathRooted($dirAnswer)) {
+      $reportsRoot = [System.IO.Path]::GetFullPath($dirAnswer)
+    } else {
+      $reportsRoot = [System.IO.Path]::GetFullPath((Join-Path (Get-Location).Path $dirAnswer))
+    }
+  }
+  Write-Host ''
+  Write-Host ('Carpeta de informes: {0}' -f $reportsRoot)
+  foreach ($entry in $scenarios) {
+    Write-Host ('{0}: Records={1}, Chunk={2}, Page={3}, Grid={4}, Threads={5}, Pool={6}, HeapMiB={7}, MemoryMiB={8}, SeedBlock={9}' -f
+      $entry.Id,$entry.Records,$entry.Chunk,$entry.Page,$entry.Grid,$entry.Threads,$entry.Pool,
+      $entry.HeapMiB,$entry.MemoryMiB,$entry.SeedBlock)
+  }
+  Write-Host ''
 }
 $Records = [long]$scenarios[0].Records
 $seedBlockValue = [long]$scenarios[0].SeedBlock
