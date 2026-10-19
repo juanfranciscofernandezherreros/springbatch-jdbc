@@ -33,7 +33,12 @@ ejecuciones; cada prueba usa una clave de job diferente.
 
 Los resultados se guardan en **`reports/benchmark-10m-FECHA-IDENTIFICADOR/`**,
 con `index.html` (comparación), un HTML por cada prueba completada,
-`resumen.csv` y los logs de cada trabajo en `logs/`.
+`resumen.csv`, **`progreso.log`** (cronología con porcentaje, registros por segundo
+y ETA estimada) y los logs completos de cada trabajo en `logs/job-base.log`,
+`logs/job-A.log`, `logs/job-B.log` y `logs/job-C.log`. Los informes HTML incluyen enlaces
+a los logs. **Los mensajes se ven en tiempo real en la consola del BAT** durante la
+generación de datos, compilación y procesamiento; el tiempo restante es orientativo
+porque los contadores del lector se publican por intervalos.
 
 La duración y la velocidad de procesamiento proceden de los metadatos de
 Spring Batch. El dato de memoria es un aproximado de **pico de heap de la JVM**
