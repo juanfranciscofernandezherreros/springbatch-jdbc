@@ -158,7 +158,8 @@ public class BatchConfiguration {
             public void afterChunk(ChunkContext context) {
                 StepExecution step = context.getStepContext().getStepExecution();
                 long reads = step.getReadCount();
-                if (reads > 0 && reads % 100_000 == 0) {
+                // Primer chunk para ver actividad inmediata; despues, cada 100k.
+                if (reads > 0 && (step.getCommitCount() == 1 || reads % 100_000 == 0)) {
                     log.info("PROGRESO partición={} leídos={} escritos={}",
                             step.getStepName(), reads, step.getWriteCount());
                 }
