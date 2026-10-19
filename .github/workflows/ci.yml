@@ -134,6 +134,21 @@ jobs:
             throw "Los limites de stress150 no se aplicaron: $($r | Out-String)"
           }
           Write-Host "Stress150 result: $($r.Status); Java/container exit: $($r.DockerExitCode)"
+      - name: CLI individual scenario with custom reports root containing spaces
+        shell: pwsh
+        run: |
+          ./scripts/benchmark-10m.ps1 -Profile A -Records 1000 -Chunk 250 -Grid 1 -Threads 1 -Pool 6 -ReportsDir 'reports/custom outputs'
+          if ($LASTEXITCODE -ne 0) { throw 'No se pudo ejecutar el escenario A independiente' }
+          $folders = @(Get-ChildItem 'reports/custom outputs' -Directory -Filter 'prueba-A-*')
+          if ($folders.Count -ne 1) { throw 'Falta el informe A en la carpeta elegida' }
+          $root = $folders[0].FullName
+          foreach($file in @('index.html','prueba-A.html','resumen.csv','progreso.log','logs/job-A.log')) {
+            if (-not (Test-Path (Join-Path $root $file))) { throw "No existe $file" }
+          }
+          $rows = @(Import-Csv (Join-Path $root 'resumen.csv'))
+          if ($rows.Count -ne 1 -or $rows[0].Id -ne 'A' -or $rows[0].Chunk -ne '250' -or
+              $rows[0].Grid -ne '1' -or $rows[0].Threads -ne '1' -or $rows[0].Written -ne '1000' -or
+              $rows[0].Status -ne 'COMPLETED') { throw "Parametros A inesperados: $($rows | Out-String)" }
       - name: Upload HTML smoke reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -170,6 +185,22 @@ jobs:
           call test-batch.bat -Profile stress150 -ValidateOnly
           if errorlevel 1 exit /b 1
           call test-batch.bat -Profile benchmark -Records 1000 -ValidateOnly
+          if errorlevel 1 exit /b 1
+          call test-batch.bat -ListProfiles
+          if errorlevel 1 exit /b 1
+          call test-batch.bat medium -Records 1250 -Chunk 250 -Grid 1 -Threads 1 -Pool 6 -ReportsDir "%TEMP%\batch CLI reports" -ValidateOnly
+          if errorlevel 1 exit /b 1
+          call test-batch.bat benchmark -Records 1000 -Chunk 1000 -ValidateOnly
+          if errorlevel 1 exit /b 1
+          call test-batch.bat base -Records 1000 -ValidateOnly
+          if errorlevel 1 exit /b 1
+          call test-batch.bat A -Records 1000 -ValidateOnly
+          if errorlevel 1 exit /b 1
+          call test-batch.bat B -Records 1000 -ValidateOnly
+          if errorlevel 1 exit /b 1
+          call test-batch.bat C -Records 1000 -ValidateOnly
+          if errorlevel 1 exit /b 1
+          call test-batch.bat 1000 -Grid 1 -Threads 1 -Pool 6 -ValidateOnly
           if errorlevel 1 exit /b 1
       - name: Validate PowerShell 5.1 benchmark syntax
         shell: powershell
