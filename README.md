@@ -91,8 +91,67 @@ leen `test-profiles.csv`; cada fila corresponde a un perfil:
 
 Se pueden editar `Records`, `Chunk`, `Page`, `Grid`, `Threads`,
 `Pool`, `HeapMiB`, `MemoryMiB` y `SeedBlock` en
-`test-profiles.csv` (CSV con comas). El límite de RAM afecta **solo a
-Spring Batch**, no al contenedor PostgreSQL.
+`test-profiles.csv` (CSV con comas). **Todos estos valores también se
+pueden modificar por CLI**, sin editar el CSV. El límite de RAM afecta
+**solo a Spring Batch**, no al contenedor PostgreSQL.
+
+### CLI para todas las opciones y los informes
+
+Abre CMD en `C:\Develop\springbatch-jdbc` y actualiza el proyecto:
+
+```bat
+cd /d C:\Develop\springbatch-jdbc
+git pull origin main
+test-batch.bat -ListProfiles
+```
+
+Los alias del menú funcionan también como comandos directos, **incluyendo los
+parámetros que pongas después del perfil**:
+
+```bat
+test-batch.bat quick -Records 1000 -ValidateOnly
+test-batch.bat medium -Records 50000 -Chunk 500 -Page 1000
+test-batch.bat full -Records 100000 -Grid 2 -Threads 2 -Pool 6
+test-batch.bat custom -Records 10000 -Chunk 250
+test-batch.bat benchmark -Records 1000 -Chunk 500 -Threads 4
+test-batch.bat single -Records 100000 -Grid 1 -Threads 1 -Pool 6
+test-batch.bat simple -Records 1000
+test-batch.bat stress150 -Records 1000 -ValidateOnly
+```
+
+La opción 5 incluye **cuatro escenarios independientes**, que ahora también
+puedes ejecutar de forma individual y parametrizar desde la CLI:
+
+```bat
+test-batch.bat base -Records 1000
+test-batch.bat A -Records 1000 -Chunk 250 -Grid 1 -Threads 1 -Pool 6
+test-batch.bat B -Records 1000 -Grid 4 -Threads 2
+test-batch.bat C -Records 1000 -Chunk 2000 -Page 1000
+```
+
+El comando `benchmark` aplica los parámetros de CLI que especifiques
+a **los cuatro escenarios**. Para dar valores distintos a A, B, C y base
+dentro de una sola comparativa, configura sus filas en `test-profiles.csv`;
+o ejecútalos por separado con los comandos anteriores.
+
+**Informes:** si tu repositorio está en
+`C:\Develop\springbatch-jdbc`, la ruta predeterminada es
+`C:\Develop\springbatch-jdbc\reports`. No se borran los informes
+anteriores. También puedes elegir cualquier carpeta raíz de informes
+(incluso una con espacios):
+
+```bat
+test-batch.bat A -Records 1000 -ReportsDir "C:\Develop\springbatch-jdbc\reports"
+test-batch.bat benchmark -Records 1000 -ReportsDir "C:\Develop\informes batch"
+```
+
+Cada ejecución crea su **propia subcarpeta** con `index.html`,
+`prueba-PERFIL.html`, `resumen.csv`, `progreso.log` y
+`logs/job-PERFIL.log`. Para comprobar parámetros sin Docker, añade
+`-ValidateOnly` al comando. Se admiten
+`-Records`, `-Chunk`, `-Page`, `-Grid`, `-Threads`, `-Pool`,
+`-HeapMiB`, `-MemoryMiB`, `-SeedBlock`, `-ReportsDir` y
+`-ListProfiles`. Usa `test-batch.bat --help` para ver el resumen.
 
 Prueba rápida de un perfil con solo mil filas:
 
