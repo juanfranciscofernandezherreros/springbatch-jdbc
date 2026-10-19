@@ -17,10 +17,12 @@ echo   [1] 100.000 registros (rapida)
 echo   [2] 1.000.000 registros (intermedia)
 echo   [3] 10.000.000 registros (prueba completa)
 echo   [4] Otra cantidad (max. 10.000.000)
+echo   [5] BENCHMARK: 4 pruebas de 10 millones + HTML
 echo   [0] Salir
 echo.
-choice /C 12340 /N /M "Selecciona una opcion: "
-if errorlevel 5 exit /b 0
+choice /C 123450 /N /M "Selecciona una opcion: "
+if errorlevel 6 exit /b 0
+if errorlevel 5 goto :benchmark_menu
 if errorlevel 4 goto :custom
 if errorlevel 3 (
   set "REGISTROS=10000000"
@@ -127,6 +129,10 @@ echo =====================================================
 echo.
 set "RESULT=0"
 goto :finish
+
+:benchmark_menu
+call "%~dp0benchmark-10m.bat"
+exit /b %errorlevel%
 
 :invalid_count
 echo ERROR: introduce un numero entero entre 1 y 10000000.
