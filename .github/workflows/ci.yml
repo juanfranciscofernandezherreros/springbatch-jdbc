@@ -188,6 +188,25 @@ jobs:
               $r.HeapLimitMiB -ne '256' -or $r.MemoryLimitMiB -ne '500') {
             throw "Parametros de manual incorrectos: $($r | Out-String)"
           }
+      - name: Verify consolidated reports/index.html includes historical and nested runs
+        shell: pwsh
+        run: |
+          $index = Join-Path 'reports' 'index.html'
+          if (-not (Test-Path -LiteralPath $index)) { throw 'Falta reports/index.html' }
+          $html = Get-Content -LiteralPath $index -Raw
+          $patterns = @(
+            'benchmark-10m-', 'particion-unica-10m-', 'prueba-quick-',
+            'prueba-simple-', 'prueba-stress150-', 'prueba-manual-',
+            'prueba-A-', 'custom%20outputs', 'manual%20tests',
+            'prueba-manual.html', 'prueba-A.html', 'resumen.csv', 'progreso.log'
+          )
+          foreach ($p in $patterns) {
+            if (-not $html.Contains($p)) { throw "Falta $p en el indice general" }
+          }
+          $folders = @(Get-ChildItem -Path reports -Directory -Recurse |
+            Where-Object { Test-Path (Join-Path $_.FullName 'resumen.csv') })
+          if ($folders.Count -lt 7) { throw "El historial deberia contener al menos 7 ejecuciones: $($folders.Count)" }
+          Write-Host "Indice general OK. Sesiones: $($folders.Count)"
       - name: Upload HTML smoke reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -279,12 +298,47 @@ jobs:
           if (($lines -join [Environment]::NewLine) -notmatch 'VALIDO: manual Records=10000 Chunk=250 Page=1000 Grid=1 Threads=1 Pool=6 HeapMiB=128 MemoryMiB=150') {
             throw "No se aplicaron los valores escritos en MI PRUEBA"
           }
+      - name: Rebuild master index from old and failed reports without Docker
+        shell: powershell
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'batch history with spaces'
+          $good = Join-Path $root 'benchmark-10m-20261019-100001-11'
+          $failed = Join-Path $root 'manual tests\prueba-manual-20261019-120001-12'
+          $pending = Join-Path $root 'prueba-single-20261019-130001-13'
+          foreach ($dir in @($good,$failed,$pending)) {
+            New-Item -Path $dir -ItemType Directory -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $dir 'progreso.log') -Value 'Iniciando prueba' -Encoding UTF8
+          }
+          Set-Content -LiteralPath (Join-Path $good 'resumen.csv') -Value "Id,Status,Written$([char]10)base,COMPLETED,1000" -Encoding UTF8
+          Add-Content -LiteralPath (Join-Path $good 'progreso.log') -Value 'BENCHMARK TERMINADO'
+          Set-Content -LiteralPath (Join-Path $good 'index.html') -Value 'benchmark'
+          Set-Content -LiteralPath (Join-Path $good 'prueba-base.html') -Value 'base'
+          Set-Content -LiteralPath (Join-Path $failed 'resumen.csv') -Value "Id,Status,Written$([char]10)manual,FAILED,50" -Encoding UTF8
+          Add-Content -LiteralPath (Join-Path $failed 'progreso.log') -Value 'ERROR GENERAL: OOM'
+          Set-Content -LiteralPath (Join-Path $failed 'prueba-manual.html') -Value 'manual'
+          & ./scripts/update-reports-index.ps1 -ReportsDir $root
+          if ($LASTEXITCODE -ne 0) { throw 'No se pudo construir el indice historico' }
+          $master = Join-Path $root 'index.html'
+          if (-not (Test-Path -LiteralPath $master)) { throw 'Falta index.html en la raiz' }
+          $html = Get-Content -LiteralPath $master -Raw
+          foreach ($fragment in @('3</strong>','1</strong>','FAILED','COMPLETED','EN CURSO',
+                                 'benchmark-10m-20261019','prueba-manual-20261019',
+                                 'prueba-single-20261019','manual%20tests','prueba-base.html',
+                                 'prueba-manual.html','progreso.log')) {
+            if (-not $html.Contains($fragment)) { throw "Falta elemento historico: $fragment" }
+          }
+          if (-not (Test-Path -LiteralPath (Join-Path $good 'prueba-base.html'))) {
+            throw 'Se elimino un informe historico'
+          }
+          & ./scripts/update-reports-index.ps1 -ReportsDir $root
+          if ($LASTEXITCODE -ne 0) { throw 'No se pudo regenerar el indice' }
       - name: Validate PowerShell 5.1 benchmark syntax
         shell: powershell
         run: |
           $tokens = $null
           $errors = $null
           [System.Management.Automation.Language.Parser]::ParseFile('scripts/benchmark-10m.ps1', [ref]$tokens, [ref]$errors) | Out-Null
+          [System.Management.Automation.Language.Parser]::ParseFile('scripts/update-reports-index.ps1', [ref]$tokens, [ref]$errors) | Out-Null
           if ($errors.Count -gt 0) {
             $errors | Format-List | Out-String | Write-Error
             exit 1
