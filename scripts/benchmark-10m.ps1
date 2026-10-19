@@ -13,7 +13,8 @@ param(
   [ValidateRange(0,65536)][int]$HeapMiB = 0,
   [ValidateRange(0,65536)][int]$MemoryMiB = 0,
   [ValidateRange(0,1000000)][int]$SeedBlock = 0,
-  [switch]$SinglePartition
+  [switch]$SinglePartition,
+  [switch]$ValidateOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -25,7 +26,7 @@ if (-not (Test-Path -LiteralPath $configPath)) { throw "Falta test-profiles.csv.
 $configRows = @(Import-Csv -LiteralPath $configPath -Encoding UTF8)
 $ids = if ($mode -eq 'benchmark') { @('base','A','B','C') } else { @($mode) }
 if (@($configRows.Profile | Select-Object -Unique).Count -ne $configRows.Count) { throw 'Hay perfiles duplicados en test-profiles.csv' }
-$scenarios = foreach ($id in $ids) {
+$scenarios = @(foreach ($id in $ids) {
   $row = @($configRows | Where-Object { $_.Profile -ceq $id })
   if ($row.Count -ne 1) { throw "Debe existir exactamente un perfil '$id' en test-profiles.csv" }
   $item = $row[0]
@@ -67,7 +68,7 @@ $scenarios = foreach ($id in $ids) {
     throw "En $id, HeapMiB >= 128 y MemoryMiB >= HeapMiB + 128 (margen para memoria no heap)"
   }
   $entry
-}
+})
 if ($scenarios.Count -gt 1) {
   $uniqueCounts = @($scenarios | Select-Object -ExpandProperty Records -Unique)
   if ($uniqueCounts.Count -ne 1) { throw 'Todos los escenarios del benchmark deben tener el mismo Records en el CSV (o pasar -Records)' }
@@ -76,6 +77,14 @@ if ($scenarios.Count -gt 1) {
 }
 $Records = [long]$scenarios[0].Records
 $seedBlockValue = [long]$scenarios[0].SeedBlock
+if ($ValidateOnly) {
+  foreach ($scenario in $scenarios) {
+    Write-Host ("VALIDO: {0} Records={1} Chunk={2} Page={3} Grid={4} Threads={5} Pool={6} HeapMiB={7} MemoryMiB={8} SeedBlock={9}" -f
+      $scenario.Id,$scenario.Records,$scenario.Chunk,$scenario.Page,$scenario.Grid,$scenario.Threads,
+      $scenario.Pool,$scenario.HeapMiB,$scenario.MemoryMiB,$scenario.SeedBlock)
+  }
+  exit 0
+}
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $reportPrefix = switch ($mode) {
   'benchmark' { 'benchmark-10m-' }
