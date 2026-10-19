@@ -2,18 +2,17 @@
 
 Ejemplo de ETL en **Java 21, Spring Boot 3.5.16, Spring Batch 5.2 y PostgreSQL 16**. Procesa tablas grandes por páginas de tamaño limitado, mediante particionado de rangos de IDs y escritura JDBC por lotes. Es un ejemplo reproducible y no una garantía de rendimiento ni de ausencia absoluta de errores de memoria.
 
-## Prueba desde Windows (.bat)
+## Prueba desde Windows (BAT, con menú)
 
-Con **Docker Desktop** iniciado, abre CMD o PowerShell en la raíz del repositorio:
+Con Docker Desktop iniciado, abre `test-batch.bat` haciendo doble clic. Selecciona **[3]** para generar y procesar **10.000.000 registros**; **[1]** ejecuta 100.000 y **[2]** un millón.
+
+También se puede ejecutar directamente:
 
 ```bat
-test-batch.bat
 test-batch.bat 10000000
 ```
 
-La primera orden ejecuta una prueba con 100.000 filas; la segunda alcanza 10 millones. El script inicia PostgreSQL, inserta datos en bloques de 250.000, construye la imagen (con pruebas Maven), procesa mediante Spring Batch y comprueba que no falten filas. Utiliza una clave de job aleatoria por ejecución, por lo que cada prueba crea una nueva ejecución lógica. No elimina los datos anteriores.
-
-**No equivale a una prueba de rendimiento verificada**: depende de memoria, disco, CPU y configuración local. Usa la opción de 100.000 filas primero; no interrumpas el proceso sin guardar la clave para recuperarlo.
+El script verifica que existan exactamente diez millones en el origen y el destino, que la ejecución termine `COMPLETED` y que los contadores del job registren exactamente diez millones de lecturas y escrituras, sin saltos. No borra datos automáticamente ni debe interpretarse como una prueba de rendimiento ya ejecutada: depende de Docker, PostgreSQL y el equipo Windows.
 
 ## Arranque rápido
 
