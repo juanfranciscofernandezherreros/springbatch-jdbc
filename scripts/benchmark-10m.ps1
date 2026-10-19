@@ -107,12 +107,12 @@ try {
   Write-Host "Benchmark secuencial (4 pruebas de $Records registros)"
   Write-Host "HTML y CSV: $reportDir"
   if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { throw "Docker no está instalado" }
-  [void](Docker @('compose','version'))
-  [void](Docker @('info','--format','{{.ServerVersion}}'))
+  [void](Docker -argv @('compose','version'))
+  [void](Docker -argv @('info','--format','{{.ServerVersion}}'))
   $started = $true
-  [void](Docker @('compose','-p',$project,'up','-d','--wait','db'))
+  [void](Docker -argv @('compose','-p',$project,'up','-d','--wait','db'))
   Write-Host 'Compilando Java (y tests) una sola vez...'
-  [void](Docker @('compose','-p',$project,'build','batch'))
+  [void](Docker -argv @('compose','-p',$project,'build','batch'))
 
   Write-Host "Generando $Records filas de origen una sola vez..."
   for($from=1L; $from -le $Records; $from+=250000L) {
