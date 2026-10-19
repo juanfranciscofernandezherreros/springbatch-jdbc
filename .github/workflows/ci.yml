@@ -271,7 +271,7 @@ jobs:
             if ($global:answerQueue.Count -eq 0) { throw "Pregunta inesperada: $Prompt" }
             return $global:answerQueue.Dequeue()
           }
-          $lines = @(& ./scripts/benchmark-10m.ps1 -Profile manual -Interactive -ValidateOnly)
+          $lines = @(& ./scripts/benchmark-10m.ps1 -Profile manual -Interactive -ValidateOnly 6>&1)
           $lines | ForEach-Object { Write-Host $_ }
           if ($LASTEXITCODE -ne 0 -or $global:questions -ne 10 -or $global:answerQueue.Count -ne 0) {
             throw "La entrada manual no funciono: $global:questions preguntas"
