@@ -14,6 +14,60 @@ test-batch.bat 10000000
 
 El script verifica que existan exactamente diez millones en el origen y el destino, que la ejecución termine `COMPLETED` y que los contadores del job registren exactamente diez millones de lecturas y escrituras, sin saltos. Cada lanzamiento del `.bat` crea un proyecto Docker **aislado** con una base de datos vacía y puerto temporal. Tanto si el job termina correctamente como si falla, ejecuta `docker compose -p <proyecto-temporal> down --volumes --rmi local --remove-orphans`: borra los contenedores, el volumen PostgreSQL y la imagen local de esa prueba. **No elimina los otros proyectos Docker, ni las imágenes base compartidas, ni la caché global de compilación**. Si el `.bat` se cierra a la fuerza, es posible que tengas que ejecutar el comando de limpieza impreso en consola. La prueba de 10 millones todavía no ha sido ejecutada de extremo a extremo en un equipo Windows.
 
+## Configuración parametrizada de todas las pruebas (Windows)
+
+El **único archivo ejecutable BAT** es `test-batch.bat`. Todas sus opciones
+leen `test-profiles.csv`; cada fila corresponde a un perfil:
+
+| Menú | Perfil CSV | Qué ejecuta |
+|---|---|---|
+| 1 | `quick` | 100.000 registros por defecto |
+| 2 | `medium` | 1.000.000 por defecto |
+| 3 | `full` | 10.000.000 por defecto |
+| 4 | `custom` | Cantidad introducida manualmente |
+| 5 | `base`, `A`, `B`, `C` | Cuatro escenarios secuenciales |
+| 6 | `single` | Una partición y un trabajador |
+
+Se pueden editar `Records`, `Chunk`, `Page`, `Grid`, `Threads`,
+`Pool`, `HeapMiB`, `MemoryMiB` y `SeedBlock` en
+`test-profiles.csv` (CSV con comas). El límite de RAM afecta **solo a
+Spring Batch**, no al contenedor PostgreSQL.
+
+Prueba rápida de un perfil con solo mil filas:
+
+```bat
+git pull origin main
+test-batch.bat -Profile single -Records 1000
+```
+
+Sobrescritura temporal sin modificar el CSV:
+
+```bat
+test-batch.bat -Profile quick -Records 100000 -Chunk 1000 -Page 1000 -Grid 1 -Threads 1 -Pool 6 -HeapMiB 512 -MemoryMiB 1024
+```
+
+Para las cuatro pruebas del benchmark con mil filas por escenario:
+
+```bat
+test-batch.bat -Profile benchmark -Records 1000
+```
+
+Los parámetros se validan antes de iniciar Docker. El pool debe disponer
+de al menos `Threads + 2` conexiones; `MemoryMiB` debe superar
+`HeapMiB` en un mínimo de 128 MiB. El benchmark mantiene el mismo
+número de registros y tamaño de bloque de carga en sus cuatro escenarios
+para conservar la comparabilidad. Todos los perfiles generan informes HTML,
+`resumen.csv`, `progreso.log` y logs de Spring Batch en `reports/`.
+
+Para comprobar solo parámetros y sintaxis sin arrancar Docker:
+
+```bat
+test-batch.bat -Profile single -Records 1000 -ValidateOnly
+```
+
+Las configuraciones cargadas, incluyendo heap y memoria máxima del
+contenedor, quedan registradas en los informes para poder reproducir las pruebas.
+
 ## Prueba con una partición y un trabajador (Windows)
 
 En el **único `test-batch.bat`**, selecciona la **opción 6** para procesar
@@ -25,9 +79,11 @@ git pull
 test-batch.bat single
 ```
 
-No tienes que definir variables con `set`. El BAT establece para esta opción
-`BATCH_GRID_SIZE=1`, `BATCH_THREADS=1`, `BATCH_CHUNK_SIZE=500`,
-`BATCH_PAGE_SIZE=1000`, `DB_POOL_SIZE=6` y heap Java máximo de 512 MiB.
+No tienes que definir variables con `set`. Los valores predeterminados
+de esta opción están en el perfil `single` de `test-profiles.csv`
+(una partición, un trabajador, chunk de 500, página de 1.000,
+pool de 6, heap de 512 MiB y RAM del contenedor Batch de 1.024 MiB).
+Puedes modificarlos antes de ejecutar la prueba.
 
 La prueba utiliza una instancia PostgreSQL aislada, genera 10 millones de
 registros de origen, procesa el job, verifica todos los contadores y genera
