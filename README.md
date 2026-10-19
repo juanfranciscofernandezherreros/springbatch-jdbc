@@ -49,7 +49,7 @@ La tabla de origen y los IDs se consideran estables mientras se ejecuta o reinic
 | `BATCH_GRID_SIZE` | 8 | Particiones de rangos de ID |
 | `BATCH_THREADS` | 4 | Trabajadores concurrentes |
 | `BATCH_MAX_SKIPS` | 0 | Registros inválidos descartables por step |
-| `DB_POOL_SIZE` | 12 | Conexiones JDBC (configurar en compose.yaml) |
+| `DB_POOL_SIZE` | 12 | Conexiones JDBC (configurables por entorno) |
 | `BATCH_FAIL_AT_ID` | 0 | Inyecta fallo de prueba en ese ID |
 | `SEED_BATCH_SIZE` | 50000 | Tamaño del bloque de carga SQL |
 
