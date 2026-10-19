@@ -2,7 +2,7 @@
 # Modos: benchmark secuencial base/A/B/C o prueba independiente de una particion.
 # Ejecutar desde Windows con Docker Desktop: test-batch.bat (opcion 5 o 6)
 param(
-  [ValidateSet('benchmark','quick','medium','full','custom','single')]
+  [ValidateSet('benchmark','quick','medium','full','custom','single','simple')]
   [string]$Profile = 'benchmark',
   [ValidateRange(0,10000000)][long]$Records = 0,
   [ValidateRange(0,100000)][int]$Chunk = 0,
@@ -41,6 +41,7 @@ $scenarios = @(foreach ($id in $ids) {
     'B' {'Seis workers'}
     'C' {'Ocho workers'}
     'single' {'Una particion'}
+    'simple' {'Prueba simple de 1000 registros, 500 MiB RAM'}
     'quick' {'Prueba rapida'}
     'medium' {'Prueba intermedia'}
     'full' {'Prueba completa'}
