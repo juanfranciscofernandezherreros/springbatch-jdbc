@@ -14,6 +14,64 @@ test-batch.bat 10000000
 
 El script verifica que existan exactamente diez millones en el origen y el destino, que la ejecución termine `COMPLETED` y que los contadores del job registren exactamente diez millones de lecturas y escrituras, sin saltos. Cada lanzamiento del `.bat` crea un proyecto Docker **aislado** con una base de datos vacía y puerto temporal. Tanto si el job termina correctamente como si falla, ejecuta `docker compose -p <proyecto-temporal> down --volumes --rmi local --remove-orphans`: borra los contenedores, el volumen PostgreSQL y la imagen local de esa prueba. **No elimina los otros proyectos Docker, ni las imágenes base compartidas, ni la caché global de compilación**. Si el `.bat` se cierra a la fuerza, es posible que tengas que ejecutar el comando de limpieza impreso en consola. La prueba de 10 millones todavía no ha sido ejecutada de extremo a extremo en un equipo Windows.
 
+## Configuracion interactiva desde CMD: Enter usa el valor por defecto
+
+El **unico `test-batch.bat`** permite introducir los parametros directamente
+en la consola, sin editar `test-profiles.csv`. En Windows:
+
+```bat
+cd /d C:\Develop\springbatch-jdbc
+git pull origin main
+test-batch.bat
+```
+
+Selecciona una opcion del menu (1-8). El BAT preguntara por los registros,
+tamaño de carga SQL, chunk, pagina, particiones, hilos, pool JDBC, heap
+Java, memoria maxima del contenedor Batch y carpeta de informes. Cada
+pregunta muestra un valor entre corchetes; **pulsa Enter para conservarlo**.
+Los valores iniciales vienen del CSV de ese perfil, pero puedes cambiarlos
+en cada ejecucion sin guardar nada en el CSV.
+
+Tambien puedes abrir un perfil directamente y responder a las preguntas:
+
+```bat
+test-batch.bat single
+test-batch.bat stress150
+test-batch.bat benchmark
+```
+
+Con **benchmark** se piden los registros y el bloque de carga una sola vez y,
+a continuacion, los ajustes particulares de **base, A, B y C**. Los informes
+van por defecto a `C:\Develop\springbatch-jdbc\reports`, sin eliminar los
+antiguos; tambien puedes indicar otra carpeta al contestar la ultima pregunta.
+
+Para usar directamente valores por defecto sin preguntas ni cambios:
+
+```bat
+test-batch.bat -Profile single
+```
+
+Cuando indicas parametros completos o parciales despues de un alias, se
+ejecuta **sin preguntas**, conservando los valores del CSV para los no
+especificados:
+
+```bat
+test-batch.bat single -Records 1000 -Grid 1 -Threads 1
+```
+
+Si quieres introducir manualmente el resto, incluye `-Interactive`:
+
+```bat
+test-batch.bat -Profile single -Records 1000 -Interactive
+```
+
+Para **previsualizar los parametros sin Docker**, combina
+`-Interactive -ValidateOnly`:
+
+```bat
+test-batch.bat -Profile stress150 -Interactive -ValidateOnly
+```
+
 ## Prueba más simple con límite de 500 MB
 
 Solo necesitas el archivo **`test-batch.bat`** que ya existe en este repositorio:
