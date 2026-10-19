@@ -25,8 +25,16 @@ $scenarios = @(
 
 function EscapeHtml([string]$s) { return [System.Net.WebUtility]::HtmlEncode($s) }
 function Invoke-DockerCommand([string[]]$argv) {
-  $out = @(& docker @argv 2>&1)
-  if ($LASTEXITCODE -ne 0) { throw "Docker fallo: docker $($argv -join ' ') | $($out -join ' ')" }
+  # En Windows PowerShell 5.1 Docker escribe mensajes normales en stderr.
+  # No deben convertirse en una excepcion salvo que el exit code sea distinto de 0.
+  $previousPreference = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    $out = @(& docker @argv 2>&1)
+    $code = $LASTEXITCODE
+  }
+  finally { $ErrorActionPreference = $previousPreference }
+  if ($code -ne 0) { throw "Docker fallo: docker $($argv -join ' ') | $($out -join ' ')" }
   return $out
 }
 function Sql([string]$query) {
@@ -135,8 +143,14 @@ try {
     try {
       [void](Sql 'TRUNCATE TABLE processed_events,rejected_events;')
       $commandArgs=@('compose','-p',$project,'run','--rm','batch','--app.run=true',"--app.job-key=$key")
-      & docker @commandArgs 2>&1 | Tee-Object -FilePath $log | Out-Host
-      if ($LASTEXITCODE -ne 0) { throw "Spring Batch falló. Revisa $log" }
+      $previousPreference = $ErrorActionPreference
+      $ErrorActionPreference = 'Continue'
+      try {
+        & docker @commandArgs 2>&1 | Tee-Object -FilePath $log | Out-Host
+        $jobExitCode = $LASTEXITCODE
+      }
+      finally { $ErrorActionPreference = $previousPreference }
+      if ($jobExitCode -ne 0) { throw "Spring Batch falló (exit=$jobExitCode). Revisa $log" }
       $m=Metrics $key
       $r.Status=$m.Status; $r.Read=$m.Read; $r.Written=$m.Written; $r.Skipped=$m.Skipped
       $r.Seconds=[math]::Round($m.Millis/1000.0,3)
