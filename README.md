@@ -48,7 +48,7 @@ git pull origin main
 test-batch.bat stress150
 ```
 
-El perfil `stress150` de `test-profiles.csv` utiliza **1.000 registros,
+El perfil `stress150` de `test-profiles.csv` utiliza **10.000.000 de registros,
 una particion, un trabajador, heap maximo JVM de 128 MiB y limite de memoria
 del contenedor Batch de 150 MiB** (`BATCH_MEMORY_LIMIT=150m`). PostgreSQL
 **no cambia sus limites**.
@@ -62,10 +62,11 @@ El proceso marca el resultado como fallido cuando corresponde, pero conserva
 En caso de fallo se muestra el codigo de salida para el diagnostico.
 Solo se eliminan los recursos temporales de este proyecto Docker.
 
-Se puede ampliar la carga para presionar al procesador sin cambiar el limite:
+Puedes validar el perfil sin ejecutar Docker, o hacer una prueba corta antes de los 10 millones:
 
 ```bat
-test-batch.bat -Profile stress150 -Records 100000
+test-batch.bat -Profile stress150 -ValidateOnly
+test-batch.bat -Profile stress150 -Records 1000
 ```
 
 Esta prueba permite **menos margen de memoria** que los perfiles habituales;
@@ -86,7 +87,7 @@ leen `test-profiles.csv`; cada fila corresponde a un perfil:
 | 5 | `base`, `A`, `B`, `C` | Cuatro escenarios secuenciales |
 | 6 | `single` | Una partición y un trabajador |
 | 7 | `simple` | 1.000 registros, una partición, un hilo, 500 MiB para Batch |
-| 8 | `stress150` | 1.000 registros, una partición, un hilo, 150 MiB para Batch; fallo de memoria posible |
+| 8 | `stress150` | 10.000.000 registros, una partición, un hilo, 150 MiB para Batch; fallo de memoria posible |
 
 Se pueden editar `Records`, `Chunk`, `Page`, `Grid`, `Threads`,
 `Pool`, `HeapMiB`, `MemoryMiB` y `SeedBlock` en
