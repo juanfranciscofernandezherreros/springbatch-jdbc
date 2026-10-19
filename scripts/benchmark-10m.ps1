@@ -24,7 +24,24 @@ $scenarios = @(
 )
 
 function EscapeHtml([string]$s) { return [System.Net.WebUtility]::HtmlEncode($s) }
-function Invoke-DockerCommand([string[]]$argv) {
+function ProgressLog([string]$message) {
+  $line = ('[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $message)
+  Write-Host $line
+  Add-Content -LiteralPath (Join-Path $reportDir 'progreso.log') -Value $line -Encoding UTF8
+}
+function Invoke-DockerCommand([string[]]$argv, [switch]$ShowOutput) {
+  if ($ShowOutput) {
+    # Solo para comandos sin resultado SQL. Muestra el output en vivo.
+    $oldPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+      & docker @argv 2>&1 | ForEach-Object { Write-Host ([string]$_) }
+      $code = $LASTEXITCODE
+    }
+    finally { $ErrorActionPreference = $oldPreference }
+    if ($code -ne 0) { throw "Docker fallo (codigo $code): docker $($argv -join ' ')" }
+    return
+  }
   # Separar stdout de stderr es indispensable con PowerShell 5.1:
   # Docker Compose puede escribir progreso en stderr y romper la conversion
   # a [long] de los resultados de psql si se mezclan los dos streams.
@@ -84,7 +101,8 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;color:#a33636}footer{color:#596b
 <tr><td>Particiones</td><td>$($r.Grid)</td></tr><tr><td>Hilos</td><td>$($r.Threads)</td></tr>
 <tr><td>Leídos</td><td>$($r.Read)</td></tr><tr><td>Escritos</td><td>$($r.Written)</td></tr>
 <tr><td>Descartados</td><td>$($r.Skipped)</td></tr><tr><td>Estado</td><td>$status</td></tr>
-</table></section><section><h2>Diagnóstico</h2><pre>$errorMessage</pre></section>
+</table></section><section><h2>Registros de ejecución</h2><p><a href="logs/job-$($r.Id).log">Log completo de Spring Batch</a> · <a href="progreso.log">Progreso global</a></p></section>
+<section><h2>Diagnóstico</h2><pre>$errorMessage</pre></section>
 <footer>Tiempo y contadores: tablas Spring Batch; heap: suma de picos reportados por pools JVM (no equivale a toda la RAM de Docker).
 No incluye inserción inicial, compilación ni limpieza. Informe medido en el PC que ejecuta el script.</footer>
 </body></html>
@@ -110,7 +128,8 @@ p{color:#566678}aside{background:white;border-radius:12px;padding:16px;margin-to
 $($trs -join [Environment]::NewLine)
 </table><aside>El origen es el mismo en las cuatro pruebas; se vacía el destino antes de cada ejecución.
 La primera pasada puede verse afectada por caché fría. Para un benchmark concluyente, hay que repetir y alternar el orden.</aside>
-<p>Resumen también disponible en resumen.csv. La carga de datos inicial y la compilación no cuentan dentro de la duración del job.</p></body></html>
+<p>Consulta también <a href="progreso.log">el registro de progreso</a> y los logs de cada job en <code>logs/</code>.</p>
+<p>Resumen disponible en resumen.csv. La carga inicial y la compilación no cuentan dentro de la duración del job.</p></body></html>
 "@
   [System.IO.File]::WriteAllText((Join-Path $reportDir 'index.html'),$html,[System.Text.Encoding]::UTF8)
   $results | Export-Csv -NoTypeInformation -Encoding UTF8 -Path (Join-Path $reportDir 'resumen.csv')
@@ -124,24 +143,29 @@ function Metrics([string]$jobKey) {
 }
 
 try {
-  Write-Host "Benchmark secuencial (4 pruebas de $Records registros)"
-  Write-Host "HTML y CSV: $reportDir"
+  ProgressLog "Benchmark secuencial: 4 pruebas de $Records registros por configuracion"
+  ProgressLog "Informes HTML/CSV y logs: $reportDir"
   if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { throw "Docker no está instalado" }
   [void](Invoke-DockerCommand -argv @('compose','version'))
   [void](Invoke-DockerCommand -argv @('info','--format','{{.ServerVersion}}'))
   $started = $true
-  [void](Invoke-DockerCommand -argv @('compose','-p',$project,'up','-d','--wait','db'))
-  Write-Host 'Compilando Java (y tests) una sola vez...'
-  [void](Invoke-DockerCommand -argv @('compose','-p',$project,'build','batch'))
+  ProgressLog "FASE 1/3: arrancando PostgreSQL en un proyecto Docker temporal"
+  Invoke-DockerCommand -argv @('compose','-p',$project,'up','-d','--wait','db') -ShowOutput
+  ProgressLog "FASE 2/3: compilando Java y ejecutando los tests"
+  Invoke-DockerCommand -argv @('compose','-p',$project,'build','batch') -ShowOutput
 
-  Write-Host "Generando $Records filas de origen una sola vez..."
+  ProgressLog "FASE 3/3: cargando $Records filas de origen una sola vez"
+  $seedWatch = [System.Diagnostics.Stopwatch]::StartNew()
   for($from=1L; $from -le $Records; $from+=250000L) {
     $to = [math]::Min($from+249999L,$Records)
     $sql="INSERT INTO source_events (id,customer_id,amount,category,created_at) SELECT s,(s % 100000)+1,((s % 200000)::numeric/100),CASE (s % 3) WHEN 0 THEN 'retail' WHEN 1 THEN 'subscription' ELSE 'online' END,TIMESTAMPTZ '2026-01-01 00:00:00+00'+((s % 86400)*INTERVAL '1 second') FROM generate_series($from,$to) AS s;"
     [void](Sql $sql)
-    Write-Host "Cargadas $to / $Records"
+    $seedPercent = [math]::Round(100.0 * $to / $Records, 1)
+    ProgressLog ("CARGA: {0:N0}/{1:N0} registros ({2:N1}%) en {3:N1}s" -f $to,$Records,$seedPercent,$seedWatch.Elapsed.TotalSeconds)
   }
+  $seedWatch.Stop()
   if ([long](Sql 'SELECT COUNT(*) FROM source_events;') -ne $Records) { throw "Origen incompleto" }
+  ProgressLog ("Carga terminada: {0:N0} registros en {1:N1} s" -f $Records,$seedWatch.Elapsed.TotalSeconds)
 
   foreach($s in $scenarios) {
     $env:BATCH_CHUNK_SIZE=[string]$s.Chunk
@@ -151,27 +175,45 @@ try {
     $key="bench-$($s.Id)-"+[guid]::NewGuid().ToString('N').Substring(0,16)
     $log=Join-Path $reportDir ("logs\job-$($s.Id).log")
     $r=[pscustomobject]@{ Id=$s.Id;Name=$s.Name;Chunk=$s.Chunk;Page=$s.Page;Grid=$s.Grid;Threads=$s.Threads;Seconds=$null;Throughput=$null;Read=0L;Written=0L;Skipped=0L;HeapMiB=$null;Status='NOT_STARTED';Error='';RunKey=$key }
-    Write-Host "PRUEBA $($s.Id): chunk=$($s.Chunk), page=$($s.Page), grid=$($s.Grid), workers=$($s.Threads)"
+    ProgressLog ("PRUEBA {0}/4: chunk={1}, page={2}, particiones={3}, hilos={4}" -f $s.Id,$s.Chunk,$s.Page,$s.Grid,$s.Threads)
     try {
       [void](Sql 'TRUNCATE TABLE processed_events,rejected_events;')
       $commandArgs=@('compose','-p',$project,'run','--rm','batch','--app.run=true',"--app.job-key=$key")
-      $jobOut = [System.IO.Path]::GetTempFileName()
-      $jobErr = [System.IO.Path]::GetTempFileName()
+      # La salida anterior se guardaba en archivos temporales y solo se
+      # mostraba al terminar. Ahora cada linea se imprime y se guarda en vivo.
+      $partitionProgress = @{}
+      $previousPercent = -1.0
+      $lastProgressSeconds = -20.0
+      $jobWatch = [System.Diagnostics.Stopwatch]::StartNew()
+      $oldPreference = $ErrorActionPreference
+      $ErrorActionPreference = 'Continue'
       try {
-        $oldPreference = $ErrorActionPreference
-        $ErrorActionPreference = 'Continue'
-        try {
-          & docker @commandArgs 1> $jobOut 2> $jobErr
-          $jobExitCode = $LASTEXITCODE
+        & docker @commandArgs 2>&1 | ForEach-Object {
+          $line = [string]$_
+          Add-Content -LiteralPath $log -Value $line -Encoding UTF8
+          Write-Host $line
+          # Mensajes emitidos por ChunkListener cada 100.000 registros/particion.
+          # El total global es una estimacion entre checkpoints.
+          if ($line -match 'PROGRESO.*partition(\d+).*escritos=(\d+)') {
+            $partitionProgress[$Matches[1]] = [long]$Matches[2]
+            $totalWritten = [long](($partitionProgress.Values | Measure-Object -Sum).Sum)
+            $percent = [math]::Min(100.0, [math]::Round(100.0 * $totalWritten / $Records, 1))
+            $elapsed = [math]::Max(0.001, $jobWatch.Elapsed.TotalSeconds)
+            if (($percent -ge $previousPercent + 1.0) -or
+                ($elapsed -ge $lastProgressSeconds + 15.0)) {
+              $rate = [math]::Round($totalWritten / $elapsed, 0)
+              $remaining = if ($rate -gt 0) { [math]::Ceiling(($Records - $totalWritten) / $rate) } else { 0 }
+              ProgressLog ("PRUEBA {0} AVANCE: {1:N0}/{2:N0} ({3:N1}%), {4:N0} reg/s aprox., ETA {5:N0}s" -f $s.Id,$totalWritten,$Records,$percent,$rate,$remaining)
+              $previousPercent = $percent
+              $lastProgressSeconds = $elapsed
+            }
+          }
         }
-        finally { $ErrorActionPreference = $oldPreference }
-        $logContent = [System.IO.File]::ReadAllText($jobOut) + [Environment]::NewLine +
-                      [System.IO.File]::ReadAllText($jobErr)
-        [System.IO.File]::WriteAllText($log,$logContent,[System.Text.Encoding]::UTF8)
-        $logContent | Out-Host
+        $jobExitCode = $LASTEXITCODE
       }
       finally {
-        Remove-Item -LiteralPath $jobOut,$jobErr -Force -ErrorAction SilentlyContinue
+        $ErrorActionPreference = $oldPreference
+        $jobWatch.Stop()
       }
       if ($jobExitCode -ne 0) { throw "Spring Batch fallo (codigo=$jobExitCode). Log: $log" }
       $m=Metrics $key
@@ -185,11 +227,12 @@ try {
       if ($r.Status -ne 'COMPLETED' -or $r.Read -ne $Records -or $r.Written -ne $Records -or $r.Skipped -ne 0 -or $dest -ne $Records -or $reject -ne 0) {
         throw "Verificación fallida: estado=$($r.Status), leído=$($r.Read), escrito=$($r.Written), destino=$dest, rechazados=$reject"
       }
-      Write-Host "OK $($r.Id): $($r.Seconds) segundos, $($r.Throughput) registros/s"
+      ProgressLog ("PRUEBA {0} OK: {1:N3}s, {2:N0} registros/s, escritos={3:N0}" -f $r.Id,$r.Seconds,$r.Throughput,$r.Written)
     }
     catch {
       $r.Status='FAILED'
       $r.Error=$_.Exception.Message
+      ProgressLog ("PRUEBA {0} ERROR: {1}" -f $s.Id,$r.Error)
       try {
         $m=Metrics $key; $r.Read=$m.Read; $r.Written=$m.Written; $r.Skipped=$m.Skipped
         $r.Seconds=[math]::Round($m.Millis/1000.0,3)
@@ -198,12 +241,13 @@ try {
       throw "Prueba $($s.Id) falló: $($r.Error). Informe: $reportDir"
     }
     [void]$results.Add($r); SaveReport $r; SaveIndex
-    Write-Host "Informe HTML: $(Join-Path $reportDir "prueba-$($r.Id).html")"
+    ProgressLog "Informe HTML generado: $(Join-Path $reportDir "prueba-$($r.Id).html")"
   }
-  Write-Host "BENCHMARK TERMINADO. Comparativa: $(Join-Path $reportDir 'index.html')"
+  ProgressLog "BENCHMARK TERMINADO. Comparativa: $(Join-Path $reportDir 'index.html')"
 }
 catch {
   $failure=$true
+  ProgressLog "ERROR GENERAL: $($_.Exception.Message)"
   Write-Warning $_.Exception.Message
 }
 finally {
