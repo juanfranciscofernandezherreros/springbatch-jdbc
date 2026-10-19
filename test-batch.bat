@@ -11,6 +11,8 @@ set "RUNARGS="
 set "HAS_CLI_OPTIONS="
 if /I "%~1"=="--help" goto :help
 if /I "%~1"=="/?" goto :help
+if /I "%~1"=="reports" goto :view_reports
+if /I "%~1"=="informes" goto :view_reports
 REM Todos los perfiles del menu y los cuatro escenarios del benchmark aceptan
 REM cualquier numero de parametros adicionales (-Records, -Grid, -ReportsDir...).
 if /I "%~1"=="quick" set "RUNARGS=-Profile quick"
@@ -57,13 +59,15 @@ echo   [6] Una particion (perfil single) + HTML
 echo   [7] PRUEBA SIMPLE: 1.000 filas, 1 hilo, 500 MB RAM
 echo   [8] ESTRES: 10 millones, 1 hilo, 150 MB RAM (posible OOM)
 echo   [9] MI PRUEBA: introducir todos los valores manualmente
+echo   [R] VER TODOS LOS REPORTES (reports\index.html)
 echo   [0] Salir
 echo.
 echo Pulsa Enter al introducir cada parametro para usar el valor por defecto.
 echo Los valores iniciales de cada prueba se leen de test-profiles.csv
 echo.
-choice /C 1234567890 /N /M "Selecciona una opcion: "
-if errorlevel 10 exit /b 0
+choice /C 123456789R0 /N /M "Selecciona una opcion: "
+if errorlevel 11 exit /b 0
+if errorlevel 10 goto :view_reports
 if errorlevel 9 set "RUNARGS=-Profile manual"
 if errorlevel 9 goto :interactive_execute
 if errorlevel 8 set "RUNARGS=-Profile stress150"
@@ -106,6 +110,18 @@ goto :append_cli
 set "RUNARGS=!RUNARGS! -Interactive"
 goto :execute
 
+:view_reports
+where powershell.exe >nul 2>nul
+if errorlevel 1 goto :fatal
+echo.
+echo Actualizando indice general con todos los informes guardados...
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\update-reports-index.ps1"
+if errorlevel 1 goto :fatal
+if not exist "%~dp0reports\index.html" goto :fatal
+echo Abriendo: %~dp0reports\index.html
+start "" "%~dp0reports\index.html"
+exit /b 0
+
 :execute
 where powershell.exe >nul 2>nul
 if errorlevel 1 (
@@ -142,6 +158,8 @@ goto :fatal
 echo USO: test-batch.bat [manual ^| quick ^| medium ^| full ^| custom ^| benchmark ^| base ^| A ^| B ^| C ^| single ^| simple ^| stress150 ^| cantidad] [opciones]
 echo O sin argumentos para abrir el menu de pruebas y responder preguntas.
 echo Cada pregunta muestra el valor por defecto. Pulsa Enter para conservarlo.
+echo Para ver TODOS los resultados: elige R o ejecuta test-batch.bat reports
+
 echo Opcion 9: MI PRUEBA, para personalizar todos los parametros desde cero.
 echo Acceso directo: test-batch.bat manual
 echo Con perfil sin parametros, p.ej. test-batch.bat single, tambien pregunta.
