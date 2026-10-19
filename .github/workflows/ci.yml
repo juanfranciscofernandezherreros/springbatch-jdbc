@@ -71,7 +71,7 @@ jobs:
       - name: Validate all test profiles without Docker
         shell: pwsh
         run: |
-          foreach ($profile in @('quick','medium','full','custom','single','simple','benchmark')) {
+          foreach ($profile in @('quick','medium','full','custom','single','simple','stress150','benchmark')) {
             ./scripts/benchmark-10m.ps1 -Profile $profile -Records 1000 -ValidateOnly
             if ($LASTEXITCODE -ne 0) { throw "Perfil invalido: $profile" }
           }
@@ -111,6 +111,26 @@ jobs:
               $r.Status -ne 'COMPLETED') {
             throw "Configuracion simple inesperada: $($r | Out-String)"
           }
+      - name: Run intentional 150MiB memory stress and retain diagnostics
+        shell: pwsh
+        run: |
+          # El micro puede salir con un codigo distinto de 0: es el resultado
+          # que queremos observar, no un error del pipeline de CI.
+          ./scripts/benchmark-10m.ps1 -Profile stress150
+          $exitCode = $LASTEXITCODE
+          Write-Host "Stress150 process exit code: $exitCode"
+          $dirs = @(Get-ChildItem -Path reports -Directory -Filter 'prueba-stress150-*')
+          if ($dirs.Count -ne 1) { throw "Falta directorio de stress150" }
+          $dir = $dirs[0].FullName
+          foreach ($file in @('index.html','prueba-stress150.html','resumen.csv','progreso.log','logs/job-stress150.log')) {
+            if (-not (Test-Path (Join-Path $dir $file))) { throw "Falta archivo de diagnostico: $file" }
+          }
+          $r = @(Import-Csv (Join-Path $dir 'resumen.csv'))[0]
+          if ($r.Id -ne 'stress150' -or $r.MemoryLimitMiB -ne '150' -or $r.HeapLimitMiB -ne '128' -or
+              $r.Grid -ne '1' -or $r.Threads -ne '1') {
+            throw "Los limites de stress150 no se aplicaron: $($r | Out-String)"
+          }
+          Write-Host "Stress150 result: $($r.Status); Java/container exit: $($r.DockerExitCode)"
       - name: Upload HTML smoke reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -143,6 +163,8 @@ jobs:
           call test-batch.bat -Profile single -Records 1000 -Grid 1 -Threads 1 -ValidateOnly
           if errorlevel 1 exit /b 1
           call test-batch.bat -Profile simple -ValidateOnly
+          if errorlevel 1 exit /b 1
+          call test-batch.bat -Profile stress150 -ValidateOnly
           if errorlevel 1 exit /b 1
           call test-batch.bat -Profile benchmark -Records 1000 -ValidateOnly
           if errorlevel 1 exit /b 1
